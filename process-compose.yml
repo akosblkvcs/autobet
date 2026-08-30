@@ -1,0 +1,34 @@
+version: "0.5"
+ordered_shutdown: true
+
+log_configuration:
+  disable_json: true
+  add_timestamp: true
+  timestamp_format: "06-01-02 15:04:05.000"
+  no_color: true
+  flush_each_line: true
+
+processes:
+  postgres:
+    command: docker compose up postgres
+    ready_log_line: "database system is ready to accept connections"
+    log_location: ./logs/postgres.log
+    availability:
+      exit_on_end: true
+    shutdown:
+      command: docker compose down postgres -t 5
+      timeout_seconds: 10
+
+  app:
+    command: |
+      uv sync --locked &&
+      uv run python -m autobet run
+    ready_log_line: "service_started"
+    log_location: ./logs/app.log
+    depends_on:
+      postgres:
+        condition: process_log_ready
+    availability:
+      exit_on_end: true
+    shutdown:
+      timeout_seconds: 10

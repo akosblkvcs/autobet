@@ -1,0 +1,25 @@
+# Dev only. Production Postgres is the one Coolify manages.
+name: autobet
+
+services:
+  postgres:
+    image: postgres:18-alpine
+    container_name: autobet-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: autobet
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    ports:
+      - "5432:5432"
+    volumes:
+      - pg:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "postgres", "-d", "autobet"]
+      interval: 60s
+      timeout: 3s
+      retries: 5
+      start_period: 10s
+
+volumes:
+  pg:

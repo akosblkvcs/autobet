@@ -1,0 +1,22 @@
+# OS / IDE
+.vscode/
+.DS_Store
+
+# Environment
+.env
+.env.*
+!.env.example
+
+# Python
+.venv/
+__pycache__/
+.ruff_cache/
+.mypy_cache/
+.pytest_cache/
+*.egg-info/
+
+# Runtime state
+data/*
+!data/.gitkeep
+logs/*
+!logs/.gitkeep
