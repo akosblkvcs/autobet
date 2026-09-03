@@ -2,16 +2,18 @@
 
 import asyncio
 import signal
+from functools import partial
 
 import structlog
 import uvicorn
 
 from autobet.bookmakers import build_bookmaker
 from autobet.config import Settings
-from autobet.health import build_app
+from autobet.parser import build_claude, parse_tip
 from autobet.pipeline import PipelineState, run_pipeline
 from autobet.sources import build_sources
 from autobet.storage import MessageStore
+from autobet.web import build_app
 
 log = structlog.get_logger(__name__)
 
@@ -30,6 +32,8 @@ async def run_service(settings: Settings) -> None:
 
     sources = build_sources(settings)
     bookmaker = build_bookmaker(settings)
+    claude = build_claude(settings)
+    parse = partial(parse_tip, claude=claude, stake=settings.stake)
 
     for source in sources:
         await source.start()
@@ -66,14 +70,22 @@ async def run_service(settings: Settings) -> None:
                 store,
                 state,
                 bookmaker,
+                parse,
             ),
             name=f"pipeline:{source.name}",
         )
         for source in sources
     ]
 
+    def report(task: asyncio.Task[None]) -> None:
+        """Say why a task ended, since any one of them ending stops the service."""
+        if not task.cancelled() and task.exception() is not None:
+            log.error("task_failed", task=task.get_name(), exc_info=task.exception())
+
+        stop.set()
+
     for task in [http, *pipelines]:
-        task.add_done_callback(lambda _: stop.set())
+        task.add_done_callback(report)
 
     log.info("service_started", http=f"http://{settings.http_host}:{settings.http_port}")
     await stop.wait()
@@ -90,5 +102,6 @@ async def run_service(settings: Settings) -> None:
     for source in sources:
         await source.stop()
 
+    await claude.close()
     await store.close()
     log.info("service_stopped", processed=state.processed)

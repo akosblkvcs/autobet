@@ -1,0 +1,45 @@
+{% extends "base.html" %}
+
+{% block body %}
+<h1>autobet</h1>
+
+<dl class="stats">
+  {% for name, value in stats.items() %}
+  <dt>{{ name }}</dt>
+  <dd>{{ value }}</dd>
+  {% endfor %}
+</dl>
+
+<h2>Recent tips</h2>
+<table>
+  {% for row in rows %}
+  <tr>
+    <td class="nowrap">{{ row.message.received_at.strftime("%m-%d %H:%M:%S") }}</td>
+    <td class="nowrap">{{ row.message.transport_latency_ms }}&nbsp;ms</td>
+    <td class="nowrap">{{ row.message.source }}</td>
+    <td>{{ row.message.channel }}</td>
+    <td>
+      {% if row.legs %}
+        {% for leg in row.legs %}
+        <div class="leg">
+          <span class="odds">{{ leg.odds }}</span>
+          <div class="event">{{ leg.event }}</div>
+          <div class="market">{{ leg.market }} &rarr; {{ leg.selection }}</div>
+        </div>
+        {% endfor %}
+        {% if row.legs | length > 1 %}
+        <div class="quiet">accumulator, combined {{ "%.2f" % row.odds }}</div>
+        {% endif %}
+      {% elif row.message.media_kind %}
+        {# Telethon stores its own class name, e.g. MessageMediaPhoto. #}
+        <span class="quiet">
+          {{- row.message.media_kind | replace("MessageMedia", "") | lower }}, no tip
+        </span>
+      {% else %}
+        {{ row.message.text[:600] }}
+      {% endif %}
+    </td>
+  </tr>
+  {% endfor %}
+</table>
+{% endblock %}

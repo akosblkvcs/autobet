@@ -1,14 +1,13 @@
 """The ingestion loop: message in, archive, parse, bet."""
 
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Awaitable, Callable
 from dataclasses import dataclass, field
 from datetime import datetime
 
 import structlog
 
 from autobet.bookmakers import Bookmaker
-from autobet.models import IncomingMessage, utcnow
-from autobet.parser import parse_tip
+from autobet.models import IncomingMessage, Tip, utcnow
 from autobet.storage import MessageStore
 
 log = structlog.get_logger(__name__)
@@ -42,6 +41,7 @@ async def run_pipeline(
     store: MessageStore,
     state: PipelineState,
     bookmaker: Bookmaker,
+    parse: Callable[[IncomingMessage], Awaitable[Tip | None]],
 ) -> None:
     """Consume one message stream: archive everything, bet on what parses.
 
@@ -50,6 +50,7 @@ async def run_pipeline(
         store: The archive every message is written to.
         state: Counters updated in place, read by the health endpoint.
         bookmaker: Where a parsed tip gets staked.
+        parse: Reads a message and returns a tip, or None if it is not one.
     """
     async for message in messages:
         is_new = await store.add(message)
@@ -61,14 +62,15 @@ async def run_pipeline(
 
         log.info(
             "message_archived" if is_new else "message_duplicate",
-            source=message.source,
-            channel=message.channel,
             external_id=message.external_id,
+            channel=message.channel,
             latency_ms=message.transport_latency_ms,
-            chars=len(message.text),
         )
 
-        tip = parse_tip(message)
+        if not is_new:
+            continue
+
+        tip = await parse(message)
 
         if tip is None:
             continue
@@ -76,13 +78,14 @@ async def run_pipeline(
         state.tips += 1
 
         result = await bookmaker.place(tip)
+
+        await store.set_tip(tip)
         log.info(
             "bet_placed" if result.accepted else "bet_rejected",
             bookmaker=bookmaker.name,
-            event=tip.event,
-            selection=tip.selection,
-            odds=tip.odds,
+            legs=len(tip.legs),
+            odds=round(tip.odds, 3),
             stake=tip.stake,
             reference=result.reference,
-            total_latency_ms=result.total_latency_ms,
+            latency_ms=result.total_latency_ms,
         )

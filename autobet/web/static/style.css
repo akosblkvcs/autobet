@@ -1,0 +1,54 @@
+body {
+  font: 14px/1.5 ui-monospace, monospace;
+  margin: 2rem;
+  max-width: 70rem;
+}
+
+.stats {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: .1rem 1rem;
+  margin: 0 0 2rem;
+}
+
+.stats dt {
+  color: #666;
+}
+
+table {
+  border-collapse: collapse;
+  width: 100%;
+}
+
+td {
+  border-top: 1px solid #ddd;
+  padding: .4rem;
+  vertical-align: top;
+}
+
+.nowrap {
+  white-space: nowrap;
+  color: #666;
+}
+
+.leg + .leg {
+  margin-top: .5rem;
+}
+
+.leg .event {
+  font-weight: 600;
+}
+
+.leg .market {
+  padding-left: 1.2rem;
+  color: #444;
+}
+
+.leg .odds {
+  float: right;
+  font-weight: 600;
+}
+
+.quiet {
+  color: #888;
+}
