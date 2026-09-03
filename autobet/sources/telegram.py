@@ -3,16 +3,40 @@
 # pyright: reportMissingTypeStubs=false, reportGeneralTypeIssues=false
 
 import asyncio
+import sqlite3
 from collections.abc import AsyncIterator
 from typing import Any
 
 import structlog
 from telethon import TelegramClient, events
+from telethon.errors import (
+    AuthKeyDuplicatedError,
+    AuthKeyUnregisteredError,
+    SessionExpiredError,
+    SessionRevokedError,
+)
 
 from autobet.config import Settings
 from autobet.models import IncomingMessage, utcnow
 
 log = structlog.get_logger(__name__)
+
+
+class SessionError(RuntimeError):
+    """The session is unusable. Carries the reason and the one-line fix."""
+
+    def __init__(self, reason: str, fix: str) -> None:
+        """Store the fix alongside the reason; the caller decides how to show it."""
+        super().__init__(reason)
+        self.fix = fix
+
+
+_DEAD_SESSION = (
+    AuthKeyDuplicatedError,
+    AuthKeyUnregisteredError,
+    SessionExpiredError,
+    SessionRevokedError,
+)
 
 
 def build_client(settings: Settings) -> TelegramClient:
@@ -26,20 +50,25 @@ def build_client(settings: Settings) -> TelegramClient:
     )
 
 
-async def connect_authorized(client: TelegramClient, settings: Settings) -> None:
-    """Connect using the stored session, without ever prompting for input.
+async def connect_authorized(client: TelegramClient) -> None:
+    """Connect with the stored session, never prompting for input.
 
     Raises:
-        RuntimeError: If the session file is missing or no longer valid.
+        SessionError: The session is dead or not logged in.
     """
-    await client.connect()
+    try:
+        await client.connect()
+    except _DEAD_SESSION as error:
+        raise SessionError(
+            type(error).__name__, "delete it and run `make login`"
+        ) from error
+    except sqlite3.OperationalError as error:
+        # Telethon writes on every connect, so a read-only bind mount or a second
+        # client holding the file both land here.
+        raise SessionError(str(error), "chown to appuser; run one client only") from error
 
     if not await client.is_user_authorized():
-        raise RuntimeError(
-            f"no valid Telegram session at {settings.telegram_session}; "
-            "run `make login` and make sure the session file "
-            "is on a persistent volume"
-        )
+        raise SessionError("not authorized", "run `make login`")
 
 
 def message_id(chat_id: int, telegram_message_id: int) -> str:
@@ -67,11 +96,8 @@ class TelegramSource:
 
     async def start(self) -> None:
         """Connect with the stored session and begin receiving updates."""
-        await connect_authorized(self._client, self._settings)
-        log.info(
-            "telegram_connected",
-            watching=self._settings.telegram_source_chat_ids,
-        )
+        await connect_authorized(self._client)
+        log.info("telegram_connected", watching=self._settings.telegram_source_chat_ids)
 
     async def _on_message(self, event: Any) -> None:
         received_at = utcnow()

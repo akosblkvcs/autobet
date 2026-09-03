@@ -11,6 +11,8 @@ dependencies = [
   "fastapi>=0.115",
   "uvicorn[standard]>=0.34",
   "asyncpg>=0.31.0",
+  "anthropic>=1.0",
+  "jinja2>=3.1",
 ]
 
 [dependency-groups]

@@ -41,6 +41,9 @@ class Settings(BaseSettings):
     # Comma-separated chat ids from `make chats`.
     telegram_source_chat_ids: ChatIds = ()
 
+    # Legacy (not an identity-linked) key.
+    anthropic_api_key: str = ""
+
     # Postgres connection string.
     database_url: str = "postgresql://autobet:autobet@localhost:5432/autobet"
 
@@ -53,6 +56,8 @@ class Settings(BaseSettings):
 
     # Master safety switch: when True, nothing is ever staked for real.
     dry_run: bool = True
+    # Flat amount staked on every tips.
+    stake: float = Field(default=100.0, gt=0)
     # Abandon a bet when the live odds have dropped this many percent.
     max_odds_drop_percent: float = Field(default=10.0, gt=0)
 

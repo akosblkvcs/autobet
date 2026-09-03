@@ -1,5 +1,6 @@
 """Domain models shared across the app."""
 
+import math
 from dataclasses import dataclass
 from datetime import UTC, datetime
 
@@ -34,16 +35,38 @@ class IncomingMessage:
 
 
 @dataclass(frozen=True, slots=True)
-class Tip:
-    """A bet suggestion extracted from a message."""
+class TipLeg:
+    """One selection on a betslip."""
 
     event: str
     market: str
     selection: str
     odds: float
+
+
+@dataclass(frozen=True, slots=True)
+class Tip:
+    """A bet suggestion extracted from a message."""
+
+    legs: tuple[TipLeg, ...]
+    # What the whole slip pays: every leg multiplied together.
+    odds: float
     stake: float
     # The message it came from, kept for provenance and end-to-end latency.
     message: IncomingMessage
+
+
+@dataclass(frozen=True, slots=True)
+class MessageWithTip:
+    """A message paired with the tip parsed from it, for reading only."""
+
+    message: IncomingMessage
+    legs: tuple[TipLeg, ...]
+
+    @property
+    def odds(self) -> float:
+        """What the whole slip pays: every leg multiplied together."""
+        return math.prod(leg.odds for leg in self.legs)
 
 
 @dataclass(frozen=True, slots=True)

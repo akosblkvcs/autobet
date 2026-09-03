@@ -1,15 +1,37 @@
 """Postgres archive of every message we observed, from any source."""
 
+import json
+from dataclasses import asdict
+from typing import Any
+
 from asyncpg import Pool, Record, create_pool
 
 from autobet.migrate import apply_migrations
-from autobet.models import IncomingMessage
+from autobet.models import IncomingMessage, MessageWithTip, Tip, TipLeg
 
 _COLUMNS = (
     "source, external_id, channel, sent_at, received_at, text, media_kind, media_path"
 )
 # Latency is derived in SQL rather than stored, so there is one source of truth.
 _LATENCY_MS = "EXTRACT(EPOCH FROM (received_at - sent_at)) * 1000"
+
+
+def _with_tip(row: Record) -> MessageWithTip:
+    # jsonb comes back as text and json.loads is untyped, so name the shape here.
+    legs: list[dict[str, Any]] = json.loads(row["tip"])
+
+    return MessageWithTip(
+        message=_to_message(row),
+        legs=tuple(
+            TipLeg(
+                event=leg["event"],
+                market=leg["market"],
+                selection=leg["selection"],
+                odds=leg["odds"],
+            )
+            for leg in legs
+        ),
+    )
 
 
 def _to_message(row: Record) -> IncomingMessage:
@@ -64,18 +86,36 @@ class MessageStore:
 
         return row is not None
 
-    async def count(self) -> int:
-        """Return the number of archived messages."""
-        return int(await self._pool.fetchval("SELECT COUNT(*) FROM messages"))
+    async def set_tip(self, tip: Tip) -> None:
+        """Record the legs the parser read off a message's screenshot."""
+        await self._pool.execute(
+            "UPDATE messages SET tip = $3 WHERE source = $1 AND external_id = $2",
+            tip.message.source,
+            tip.message.external_id,
+            json.dumps([asdict(leg) for leg in tip.legs]),
+        )
 
-    async def recent(self, limit: int = 50) -> list[IncomingMessage]:
-        """Return the most recently received messages, newest first."""
+    async def totals(self) -> dict[str, int]:
+        """Return how many messages are archived and how many became a tip."""
+        row = await self._pool.fetchrow(
+            "SELECT count(*) AS messages, count(tip) AS tips FROM messages"
+        )
+        assert row is not None
+
+        return {"messages": row["messages"], "tips": row["tips"]}
+
+    async def recent_tips(self, limit: int = 50) -> list[MessageWithTip]:
+        """Return the most recent messages that parsed into a tip, newest first."""
         rows = await self._pool.fetch(
-            f"SELECT {_COLUMNS} FROM messages ORDER BY received_at DESC LIMIT $1",
+            f"""
+            SELECT {_COLUMNS}, tip FROM messages
+            WHERE tip IS NOT NULL
+            ORDER BY received_at DESC LIMIT $1
+            """,
             limit,
         )
 
-        return [_to_message(row) for row in rows]
+        return [_with_tip(row) for row in rows]
 
     async def latency_percentiles(self) -> dict[str, int]:
         """Return p50/p90/p99 transport latency in ms."""
