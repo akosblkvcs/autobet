@@ -11,18 +11,15 @@ from typing import Any
 import structlog
 from websockets.asyncio.client import ClientConnection, connect
 
+from autobet.config import Settings
 from autobet.models import LegOffer, Tip, TipLeg
 
 log = structlog.get_logger(__name__)
 
-_WAMP_URL = "wss://sportsapi.tippmixpro.hu/v2"
-_WAMP_REALM = "www.tippmixpro.hu"
-_OPERATOR_ID = "2901"
-_WAMP_HELLO: list[Any] = [
-    1,
-    _WAMP_REALM,
-    {"agent": "autobet", "roles": {"caller": {}, "subscriber": {}}},
-]
+_WAMP_ROLES: dict[str, Any] = {
+    "agent": "autobet",
+    "roles": {"caller": {}, "subscriber": {}},
+}
 _WAMP_CALL = 48
 _WAMP_RESULT = 50
 _WAMP_ERROR = 8
@@ -89,32 +86,53 @@ def _score(query: str, candidate: str) -> float:
     return SequenceMatcher(None, left, right).ratio()
 
 
+class NotLoggedInError(RuntimeError):
+    """The feed would not attach an account to the socket, so no bet can be placed."""
+
+
 class Feed:
     """A kept-open connection to the odds feed, plus the event index."""
 
-    def __init__(self) -> None:
+    def __init__(self, settings: Settings) -> None:
         """Start empty; :meth:`start` does the connecting."""
+        self._settings = settings
         self._socket: ClientConnection | None = None
         self._request = 0
         self._events: list[dict[str, Any]] = []
         self._refresh: asyncio.Task[None] | None = None
+        self._reader: asyncio.Task[None] | None = None
+        self._waiting: dict[int, asyncio.Future[dict[str, Any]]] = {}
         self._lock = asyncio.Lock()
 
     async def start(self) -> None:
-        """Connect, then index in the background."""
-        self._socket = await connect(_WAMP_URL, max_size=None)
-        await self._socket.send(json.dumps(_WAMP_HELLO))
+        """Connect, start the reader, then index in the background."""
+        self._socket = await connect(self._settings.book_ws, max_size=None)
+        await self._socket.send(json.dumps([1, self._settings.book_realm, _WAMP_ROLES]))
         await self._socket.recv()
 
+        self._reader = asyncio.create_task(self._read_answers(), name="feed:reader")
         self._refresh = asyncio.create_task(self._keep_fresh(), name="feed:index")
 
-    async def authenticate(self, ce_session: str) -> None:
-        """Attach an account to this socket, so bets may be placed on it."""
-        await self._call_raw(
+    async def authenticate(self, ce_session: str) -> str:
+        """Attach an account to this socket, so bets may be placed on it.
+
+        Returns:
+            The username the feed says we are.
+
+        Raises:
+            NotLoggedInError: The feed refused the token.
+        """
+        answer = await self._call_raw(
             "/sports#loginWithCeSession", {"lang": "hu", "ceSession": ce_session}
         )
+        username = str(answer.get("username") or "")
 
-        log.info("feed_authenticated")
+        if not username:
+            raise NotLoggedInError(str(answer.get("message") or "no answer"))
+
+        log.info("feed_authenticated", username=username)
+
+        return username
 
     async def place_bet(self, offers: Sequence[LegOffer], stake: float) -> dict[str, Any]:
         """Place one bet covering every leg, and return whatever the feed says."""
@@ -143,9 +161,10 @@ class Feed:
         )
 
     async def stop(self) -> None:
-        """Drop the refresh task and close the socket."""
-        if self._refresh is not None:
-            self._refresh.cancel()
+        """Drop the background tasks and close the socket."""
+        for task in (self._refresh, self._reader):
+            if task is not None:
+                task.cancel()
 
         if self._socket is not None:
             await self._socket.close()
@@ -165,25 +184,42 @@ class Feed:
     async def _call_raw(
         self, procedure: str, arguments: dict[str, Any]
     ) -> dict[str, Any]:
-        """Call one procedure and return its result, or {} if the feed refused."""
+        """Call one procedure and wait for its own answer."""
         assert self._socket is not None
         self._request += 1
         mine = self._request
+        waiting: asyncio.Future[dict[str, Any]] = (
+            asyncio.get_running_loop().create_future()
+        )
+        self._waiting[mine] = waiting
+
         await self._socket.send(
             json.dumps([_WAMP_CALL, mine, {}, procedure, [], arguments])
         )
+        result = await waiting
+
+        if not result:
+            log.warning("feed_call_failed", procedure=procedure)
+
+        return result
+
+    async def _read_answers(self) -> None:
+        """Own ``recv`` and hand each answer to whoever asked for it."""
+        assert self._socket is not None
 
         while True:
             message: list[Any] = json.loads(await self._socket.recv())
-
-            if message[0] == _WAMP_RESULT and message[1] == mine:
-                result: dict[str, Any] = message[4]
-
-                return result
-            if message[0] == _WAMP_ERROR and message[2] == mine:
-                log.warning("feed_call_failed", procedure=procedure, detail=message[4:])
-
-                return {}
+            # A RESULT is tagged with the request id; an ERROR repeats it one
+            # place later, after the message type it is complaining about.
+            if message[0] == _WAMP_RESULT:
+                waiting = self._waiting.pop(message[1], None)
+                if waiting is not None and not waiting.done():
+                    waiting.set_result(message[4])
+            elif message[0] == _WAMP_ERROR:
+                waiting = self._waiting.pop(message[2], None)
+                if waiting is not None and not waiting.done():
+                    log.warning("feed_error", detail=message[4:])
+                    waiting.set_result({})
 
     async def _keep_fresh(self) -> None:
         """Index now, then rebuild forever, so a tip never waits for one."""
@@ -197,7 +233,7 @@ class Feed:
             sports = [
                 record["id"]
                 for record in await self._call(
-                    f"/sports/{_OPERATOR_ID}/hu/{_DISCIPLINES_TOPIC}"
+                    f"/sports/{self._settings.book_operator}/hu/{_DISCIPLINES_TOPIC}"
                 )
                 if record["_type"] == "SPORT"
             ]
@@ -206,7 +242,7 @@ class Feed:
                 tournaments = [
                     record
                     for record in await self._call(
-                        f"/sports/{_OPERATOR_ID}/hu/tournaments/{sport}"
+                        f"/sports/{self._settings.book_operator}/hu/tournaments/{sport}"
                     )
                     if record["_type"] == "TOURNAMENT" and record.get("numberOfEvents")
                 ]
@@ -214,7 +250,7 @@ class Feed:
                     events += [
                         record
                         for record in await self._call(
-                            f"/sports/{_OPERATOR_ID}/hu/matches/{tournament['id']}"
+                            f"/sports/{self._settings.book_operator}/hu/matches/{tournament['id']}"
                         )
                         if record["_type"] == "MATCH"
                     ]
@@ -262,7 +298,9 @@ class Feed:
         if event is None:
             return None
 
-        records = await self._call(f"/sports/{_OPERATOR_ID}/hu/{event['id']}/match-odds")
+        records = await self._call(
+            f"/sports/{self._settings.book_operator}/hu/{event['id']}/match-odds"
+        )
         grouped: dict[str, list[dict[str, Any]]] = {}
         for record in records:
             grouped.setdefault(record["_type"], []).append(record)

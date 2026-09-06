@@ -16,14 +16,12 @@ log = structlog.get_logger(__name__)
 class Bookmaker:
     """The one bookmaker. Stakes only when dry run is off."""
 
-    name = "tippmixpro"
-
     def __init__(self, settings: Settings) -> None:
         """Keep the killswitches and build the feed client."""
         self._settings = settings
         self._dry_run = settings.dry_run
         self._max_drop_percent = settings.max_odds_drop_percent
-        self._feed = Feed()
+        self._feed = Feed(settings)
 
     async def start(self) -> None:
         """Connect the feed; its event index fills in behind us."""

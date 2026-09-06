@@ -90,7 +90,6 @@ async def run_pipeline(
 
             log.info(
                 "bet_placed" if result.accepted else "bet_rejected",
-                bookmaker=bookmaker.name,
                 legs=len(tip.legs),
                 odds=round(tip.odds, 3),
                 stake=tip.stake,

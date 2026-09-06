@@ -86,7 +86,7 @@ class TelegramSource:
         self._queue: asyncio.Queue[IncomingMessage] = asyncio.Queue()
         self._channels: tuple[str, ...] = ()
         self._client = build_client(settings)
-        settings.media_dir.mkdir(parents=True, exist_ok=True)
+        settings.telegram_media_dir.mkdir(parents=True, exist_ok=True)
 
         if chats:
             self._client.add_event_handler(
@@ -114,7 +114,10 @@ class TelegramSource:
         chat_id = int(event.chat_id)
         media_path = (
             await event.message.download_media(
-                file=str(self._settings.media_dir / f"{chat_id}_{event.message.id}.jpg")
+                file=str(
+                    self._settings.telegram_media_dir
+                    / f"{chat_id}_{event.message.id}.jpg"
+                )
             )
             if event.message.photo
             else None

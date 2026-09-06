@@ -1,19 +1,20 @@
-"""Mint a betting session from the browser profile a human logged in with."""
+"""Mint a betting session from the book's login, over plain HTTP."""
 
-import asyncio
-import json
 from typing import Any
 
+import httpx2
 import structlog
-from playwright.async_api import Response, async_playwright
 
 from autobet.config import Settings
 
 log = structlog.get_logger(__name__)
 
-_PAGE = "https://www.tippmixpro.hu/hu/fogadas/i"
-_LOADER = "gamelaunch-hu.everymatrix.com/Loader/StartInfo"
-_TIMEOUT_MS = 60_000
+_AGENT = (
+    "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 "
+    "(KHTML, like Gecko) Chrome/151.0.0.0 Safari/537.36"
+)
+_TIMEOUT = 30.0
+_OK = 200
 
 
 class SessionError(RuntimeError):
@@ -26,39 +27,56 @@ class SessionError(RuntimeError):
 
 
 async def mint_ce_session(settings: Settings) -> str:
-    """Open the site with the stored login and return the token bets need."""
-    found: asyncio.Future[str] = asyncio.get_running_loop().create_future()
+    """Log in and return the token the feed needs to place bets."""
+    if not (settings.book_username and settings.book_api):
+        raise SessionError("no book login configured", "set BOOK_USERNAME and BOOK_API")
 
-    async def watch(response: Response) -> None:
-        if _LOADER not in response.url or found.done():
-            return
+    headers = {
+        "User-Agent": _AGENT,
+        "Accept": "application/json",
+        "Origin": settings.book_site,
+        "Referer": f"{settings.book_site}/",
+    }
 
-        body: dict[str, Any] = json.loads(await response.text())
-        if body.get("ceSession"):
-            found.set_result(str(body["ceSession"]))
-
-    async with async_playwright() as playwright:
-        browser = await playwright.chromium.launch_persistent_context(
-            str(settings.browser_profile),
-            headless=True,
-            locale="hu-HU",
-            args=["--password-store=basic", "--no-first-run"],
+    async with httpx2.AsyncClient(
+        headers=headers, timeout=_TIMEOUT, follow_redirects=True
+    ) as client:
+        signed_in = await client.post(
+            f"{settings.book_api}/v1/player/legislation/login?language=hu",
+            json={
+                "username": settings.book_username,
+                "password": settings.book_password.get_secret_value(),
+            },
         )
-        page = browser.pages[0] if browser.pages else await browser.new_page()
-        page.on("response", lambda response: asyncio.create_task(watch(response)))
-
-        await page.goto(_PAGE, wait_until="domcontentloaded", timeout=_TIMEOUT_MS)
-        try:
-            async with asyncio.timeout(_TIMEOUT_MS / 1000):
-                ce_session = await found
-        except TimeoutError:
+        if signed_in.status_code != _OK:
             raise SessionError(
-                "no ceSession from the loader",
-                "log in again with data/feed/capture_betslip.py",
-            ) from None
-        finally:
-            await browser.close()
+                f"login refused with {signed_in.status_code}",
+                "check BOOK_USERNAME and BOOK_PASSWORD",
+            )
 
-    log.info("betting_session_minted")
+        opened: dict[str, Any] = signed_in.json()
+        client.headers["X-SessionId"] = str(opened.get("sessionId") or "")
+
+        player: dict[str, Any] = (
+            await client.get(f"{settings.book_api}/v1/player/session/player?language=hu")
+        ).json()
+        sid = str(player.get("Guid") or "")
+        if not sid:
+            raise SessionError("no session guid after login", "check the credentials")
+
+        loader: dict[str, Any] = (
+            await client.get(
+                settings.book_loader, params={"_sid": sid, "launchApi": "true"}
+            )
+        ).json()
+
+    ce_session = str(loader.get("ceSession") or "")
+    if not ce_session:
+        raise SessionError(
+            f"loader gave no ceSession: {loader.get('ErrorMessage')}",
+            "the login worked but the sportsbook refused it",
+        )
+
+    log.info("betting_session_minted", username=player.get("Username"))
 
     return ce_session

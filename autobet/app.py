@@ -41,7 +41,6 @@ async def run_service(settings: Settings) -> None:
     log.info(
         "service_configured",
         channels=source.channels,
-        bookmaker=bookmaker.name,
         dry_run=settings.dry_run,
     )
 
