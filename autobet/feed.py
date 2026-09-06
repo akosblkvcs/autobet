@@ -144,7 +144,7 @@ class Feed:
                 "amount": stake,
                 "freeBet": False,
                 "lang": "hu",
-                "type": "SINGLE" if len(offers) == 1 else "COMBI",
+                "type": "SINGLE" if len(offers) == 1 else "MULTIPLE",
                 "terminalType": "DESKTOP",
                 "selections": [
                     {
@@ -301,6 +301,12 @@ class Feed:
         records = await self._call(
             f"/sports/{self._settings.book_operator}/hu/{event['id']}/match-odds"
         )
+
+        if not records:
+            log.info("event_has_no_odds", fixture=event.get("name"))
+
+            return None
+
         grouped: dict[str, list[dict[str, Any]]] = {}
         for record in records:
             grouped.setdefault(record["_type"], []).append(record)
