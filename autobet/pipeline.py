@@ -7,7 +7,7 @@ from datetime import datetime
 import structlog
 
 from autobet.bookmaker import Bookmaker
-from autobet.models import IncomingMessage, Tip, utcnow
+from autobet.models import BetResult, IncomingMessage, Tip, utcnow
 from autobet.storage import MessageStore
 
 log = structlog.get_logger(__name__)
@@ -86,7 +86,7 @@ async def run_pipeline(
             state.tips += 1
             result = await bookmaker.place(tip)
 
-            await store.set_tip(tip, result.offers, result.refusal)
+            await store.record(tip, result)
 
             log.info(
                 "bet_placed" if result.accepted else "bet_rejected",
@@ -101,4 +101,12 @@ async def run_pipeline(
             log.exception("tip_failed", external_id=message.external_id)
 
             if tip is not None:
-                await store.set_tip(tip, refusal=f"failed: {type(error).__name__}")
+                await store.record(
+                    tip,
+                    BetResult(
+                        tip=tip,
+                        reference="",
+                        placed_at=utcnow(),
+                        refusal=f"failed: {type(error).__name__}",
+                    ),
+                )

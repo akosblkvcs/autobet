@@ -69,12 +69,13 @@ class Tip:
 
 @dataclass(frozen=True, slots=True)
 class MessageWithTip:
-    """A message paired with the tip parsed from it, for reading only."""
+    """A message, its tip and what the bookmaker did, joined for reading only."""
 
     message: IncomingMessage
     legs: tuple[TipLeg, ...]
     offers: tuple[LegOffer | None, ...] = ()
     refusal: str = ""
+    reference: str = ""
 
     def paired(self) -> list[tuple[TipLeg, LegOffer | None]]:
         """Legs next to what each one resolved to, for rendering."""

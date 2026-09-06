@@ -38,3 +38,6 @@ db-reset:
 	docker compose down -v
 	docker compose up -d postgres
 
+db-wipe:
+	docker compose exec postgres psql -U postgres -d autobet -c "DROP SCHEMA public CASCADE; CREATE SCHEMA public;"
+

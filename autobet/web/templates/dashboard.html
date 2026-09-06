@@ -50,6 +50,8 @@
       {% endif %}
       {% if row.refusal %}
       <div class="refused">refused &middot; {{ row.refusal }}</div>
+      {% elif row.reference %}
+      <div class="quiet">placed &middot; {{ row.reference }}</div>
       {% endif %}
     </td>
   </tr>
