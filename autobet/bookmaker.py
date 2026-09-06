@@ -1,12 +1,14 @@
 """Resolve a tip against the live feed, then stake it."""
 
 import math
+from dataclasses import replace
 
 import structlog
 
 from autobet.config import Settings
 from autobet.feed import Feed
 from autobet.models import BetResult, LegOffer, Tip, utcnow
+from autobet.session import mint_ce_session
 
 log = structlog.get_logger(__name__)
 
@@ -18,6 +20,7 @@ class Bookmaker:
 
     def __init__(self, settings: Settings) -> None:
         """Keep the killswitches and build the feed client."""
+        self._settings = settings
         self._dry_run = settings.dry_run
         self._max_drop_percent = settings.max_odds_drop_percent
         self._feed = Feed()
@@ -25,6 +28,9 @@ class Bookmaker:
     async def start(self) -> None:
         """Connect the feed; its event index fills in behind us."""
         await self._feed.start()
+
+        if not self._dry_run:
+            await self._feed.authenticate(await mint_ce_session(self._settings))
 
     async def place(self, tip: Tip) -> BetResult:
         """Resolve every leg against the feed, then stake it unless dry run is on."""
@@ -47,7 +53,7 @@ class Bookmaker:
 
         result = BetResult(
             tip=tip,
-            reference="dry-run",
+            reference="dry-run" if self._dry_run else "",
             placed_at=utcnow(),
             offers=tuple(offers),
             refusal=self._refuse(tip, offers),
@@ -72,7 +78,18 @@ class Bookmaker:
 
             return result
 
-        raise NotImplementedError("placement is stage 4; run with DRY_RUN=True")
+        placeable = [offer for offer in offers if offer is not None]
+        answer = await self._feed.place_bet(placeable, tip.stake)
+        reference = str(answer.get("betId") or answer.get("id") or "")
+
+        if not reference:
+            log.error("bet_not_confirmed", answer=answer)
+
+            return replace(result, refusal="bookmaker did not confirm the bet")
+
+        log.info("bet_accepted", reference=reference, stake=tip.stake)
+
+        return replace(result, reference=reference)
 
     def _refuse(self, tip: Tip, offers: list[LegOffer | None]) -> str:
         """Say why this tip must not be staked, or "" when it may be."""

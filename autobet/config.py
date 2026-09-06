@@ -29,6 +29,8 @@ class Settings(BaseSettings):
     telegram_api_hash: str = ""
     # Session file, full path including the .session extension.
     telegram_session: Path = Path("data/telethon.session")
+    # Chromium profile logged into tippmixpro.
+    browser_profile: Path = Path("data/browser")
     # Where media files are saved.
     media_dir: Path = Path("data/media")
     # Comma-separated chat ids from `make chats`.

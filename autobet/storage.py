@@ -42,6 +42,9 @@ def _with_tip(row: Record) -> MessageWithTip:
                 leg=leg,
                 event_id=offer["event_id"],
                 event_name=offer["event_name"],
+                market_id=offer.get("market_id", ""),
+                outcome_id=offer.get("outcome_id", ""),
+                betting_type_id=offer.get("betting_type_id", ""),
                 offer_id=offer["offer_id"],
                 odds=offer["odds"],
             )
@@ -50,6 +53,11 @@ def _with_tip(row: Record) -> MessageWithTip:
         if stored
         else (),
     )
+
+
+def _offer_row(offer: LegOffer) -> dict[str, Any]:
+    """The offer as stored: everything except the leg it already sits beside."""
+    return {field: value for field, value in asdict(offer).items() if field != "leg"}
 
 
 def _to_message(row: Record) -> IncomingMessage:
@@ -115,19 +123,7 @@ class MessageStore:
             """,
             tip.message.external_id,
             json.dumps([asdict(leg) for leg in tip.legs]),
-            json.dumps(
-                [
-                    None
-                    if offer is None
-                    else {
-                        "event_id": offer.event_id,
-                        "event_name": offer.event_name,
-                        "offer_id": offer.offer_id,
-                        "odds": offer.odds,
-                    }
-                    for offer in offers
-                ]
-            )
+            json.dumps([None if offer is None else _offer_row(offer) for offer in offers])
             if offers
             else None,
             refusal or None,

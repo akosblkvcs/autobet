@@ -4,6 +4,7 @@ import asyncio
 import json
 import re
 import unicodedata
+from collections.abc import Sequence
 from difflib import SequenceMatcher
 from typing import Any
 
@@ -107,6 +108,40 @@ class Feed:
 
         self._refresh = asyncio.create_task(self._keep_fresh(), name="feed:index")
 
+    async def authenticate(self, ce_session: str) -> None:
+        """Attach an account to this socket, so bets may be placed on it."""
+        await self._call_raw(
+            "/sports#loginWithCeSession", {"lang": "hu", "ceSession": ce_session}
+        )
+
+        log.info("feed_authenticated")
+
+    async def place_bet(self, offers: Sequence[LegOffer], stake: float) -> dict[str, Any]:
+        """Place one bet covering every leg, and return whatever the feed says."""
+        return await self._call_raw(
+            "/sports#placeBetV2",
+            {
+                "oddsValidationType": "ACCEPT_ANY",
+                "liveOddsValidationType": "ACCEPT_ANY",
+                "amount": stake,
+                "freeBet": False,
+                "lang": "hu",
+                "type": "SINGLE" if len(offers) == 1 else "COMBI",
+                "terminalType": "DESKTOP",
+                "selections": [
+                    {
+                        "bettingOfferId": offer.offer_id,
+                        "priceValue": offer.odds,
+                        "eventId": offer.event_id,
+                        "marketIds": [offer.market_id],
+                        "bettingTypeId": offer.betting_type_id,
+                        "outcomeId": offer.outcome_id,
+                    }
+                    for offer in offers
+                ],
+            },
+        )
+
     async def stop(self) -> None:
         """Drop the refresh task and close the socket."""
         if self._refresh is not None:
@@ -122,24 +157,33 @@ class Feed:
 
     async def _call(self, topic: str) -> list[dict[str, Any]]:
         """Ask for a topic's initial dump and return its records."""
+        payload = await self._call_raw("/sports#initialDump", {"topic": topic})
+        records: list[dict[str, Any]] = payload.get("records", [])
+
+        return records
+
+    async def _call_raw(
+        self, procedure: str, arguments: dict[str, Any]
+    ) -> dict[str, Any]:
+        """Call one procedure and return its result, or {} if the feed refused."""
         assert self._socket is not None
         self._request += 1
         mine = self._request
         await self._socket.send(
-            json.dumps(
-                [_WAMP_CALL, mine, {}, "/sports#initialDump", [], {"topic": topic}]
-            )
+            json.dumps([_WAMP_CALL, mine, {}, procedure, [], arguments])
         )
 
         while True:
             message: list[Any] = json.loads(await self._socket.recv())
 
             if message[0] == _WAMP_RESULT and message[1] == mine:
-                payload: dict[str, Any] = message[4]
-                records: list[dict[str, Any]] = payload.get("records", [])
-                return records
+                result: dict[str, Any] = message[4]
+
+                return result
             if message[0] == _WAMP_ERROR and message[2] == mine:
-                return []
+                log.warning("feed_call_failed", procedure=procedure, detail=message[4:])
+
+                return {}
 
     async def _keep_fresh(self) -> None:
         """Index now, then rebuild forever, so a tip never waits for one."""
@@ -263,6 +307,9 @@ class Feed:
                         leg=leg,
                         event_id=str(event["id"]),
                         event_name=str(event.get("name")),
+                        market_id=str(markets[0]["id"]),
+                        outcome_id=str(outcome["id"]),
+                        betting_type_id=str(markets[0].get("bettingTypeId")),
                         offer_id=str(offer["id"]),
                         odds=float(offer["odds"]),
                     )

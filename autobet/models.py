@@ -45,6 +45,9 @@ class LegOffer:
     leg: TipLeg
     event_id: str
     event_name: str
+    market_id: str
+    outcome_id: str
+    betting_type_id: str
     offer_id: str
     odds: float
 

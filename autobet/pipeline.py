@@ -66,6 +66,17 @@ async def run_pipeline(
         if not is_new:
             continue
 
+        if message.sent_at < state.started_at:
+            log.info(
+                "message_stale",
+                external_id=message.external_id,
+                sent_at=message.sent_at.isoformat(),
+            )
+
+            continue
+
+        tip: Tip | None = None
+
         try:
             tip = await parse(message)
 
@@ -87,5 +98,8 @@ async def run_pipeline(
                 refusal=result.refusal,
                 latency_ms=result.total_latency_ms,
             )
-        except Exception:
+        except Exception as error:
             log.exception("tip_failed", external_id=message.external_id)
+
+            if tip is not None:
+                await store.set_tip(tip, refusal=f"failed: {type(error).__name__}")
