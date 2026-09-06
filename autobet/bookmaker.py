@@ -1,10 +1,12 @@
 """Resolve a tip against the live feed, then stake it."""
 
+import math
+
 import structlog
 
 from autobet.config import Settings
 from autobet.feed import Feed
-from autobet.models import BetResult, Tip, utcnow
+from autobet.models import BetResult, LegOffer, Tip, utcnow
 
 log = structlog.get_logger(__name__)
 
@@ -15,8 +17,9 @@ class Bookmaker:
     name = "tippmixpro"
 
     def __init__(self, settings: Settings) -> None:
-        """Keep the killswitch and build the feed client."""
+        """Keep the killswitches and build the feed client."""
         self._dry_run = settings.dry_run
+        self._max_drop_percent = settings.max_odds_drop_percent
         self._feed = Feed()
 
     async def start(self) -> None:
@@ -44,11 +47,21 @@ class Bookmaker:
 
         result = BetResult(
             tip=tip,
-            accepted=True,
             reference="dry-run",
             placed_at=utcnow(),
             offers=tuple(offers),
+            refusal=self._refuse(tip, offers),
         )
+
+        if not result.accepted:
+            log.info(
+                "bet_refused",
+                refusal=result.refusal,
+                legs=len(tip.legs),
+                tipster_odds=round(tip.odds, 3),
+            )
+
+            return result
 
         if self._dry_run:
             log.info(
@@ -60,6 +73,21 @@ class Bookmaker:
             return result
 
         raise NotImplementedError("placement is stage 4; run with DRY_RUN=True")
+
+    def _refuse(self, tip: Tip, offers: list[LegOffer | None]) -> str:
+        """Say why this tip must not be staked, or "" when it may be."""
+        placeable = [offer for offer in offers if offer is not None]
+
+        if len(placeable) != len(offers):
+            return f"{len(offers) - len(placeable)} of {len(offers)} legs not in the feed"
+
+        live = math.prod(offer.odds for offer in placeable)
+        drop = (tip.odds - live) / tip.odds * 100
+
+        if drop > self._max_drop_percent:
+            return f"odds dropped {drop:.1f}%, limit {self._max_drop_percent:.0f}%"
+
+        return ""
 
     async def stop(self) -> None:
         """Close the feed."""

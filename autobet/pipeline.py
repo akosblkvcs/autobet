@@ -75,7 +75,7 @@ async def run_pipeline(
             state.tips += 1
             result = await bookmaker.place(tip)
 
-            await store.set_tip(tip, result.offers)
+            await store.set_tip(tip, result.offers, result.refusal)
 
             log.info(
                 "bet_placed" if result.accepted else "bet_rejected",
@@ -84,6 +84,7 @@ async def run_pipeline(
                 odds=round(tip.odds, 3),
                 stake=tip.stake,
                 reference=result.reference,
+                refusal=result.refusal,
                 latency_ms=result.total_latency_ms,
             )
         except Exception:

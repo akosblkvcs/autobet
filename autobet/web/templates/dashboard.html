@@ -48,6 +48,9 @@
       {% if row.legs | length > 1 %}
       <div class="quiet">accumulator, combined {{ "%.2f" % row.odds }}</div>
       {% endif %}
+      {% if row.refusal %}
+      <div class="refused">refused &middot; {{ row.refusal }}</div>
+      {% endif %}
     </td>
   </tr>
   {% endfor %}

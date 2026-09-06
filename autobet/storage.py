@@ -34,6 +34,7 @@ def _with_tip(row: Record) -> MessageWithTip:
     return MessageWithTip(
         message=_to_message(row),
         legs=parsed,
+        refusal=row["refusal"] or "",
         offers=tuple(
             None
             if offer is None
@@ -100,11 +101,16 @@ class MessageStore:
 
         return row is not None
 
-    async def set_tip(self, tip: Tip, offers: Sequence[LegOffer | None] = ()) -> None:
-        """Record the legs read off a screenshot, and what each one resolved to."""
+    async def set_tip(
+        self,
+        tip: Tip,
+        offers: Sequence[LegOffer | None] = (),
+        refusal: str = "",
+    ) -> None:
+        """Record the legs read off a screenshot, what they resolved to, and the call."""
         await self._pool.execute(
             """
-            UPDATE messages SET tip = $2, offers = $3
+            UPDATE messages SET tip = $2, offers = $3, refusal = $4
             WHERE external_id = $1
             """,
             tip.message.external_id,
@@ -124,6 +130,7 @@ class MessageStore:
             )
             if offers
             else None,
+            refusal or None,
         )
 
     async def totals(self) -> dict[str, int]:
@@ -133,6 +140,7 @@ class MessageStore:
             SELECT count(*) AS messages,
                    count(tip) AS tips,
                    count(offers) AS tips_looked_up,
+                   count(refusal) AS tips_refused,
                    count(*) FILTER (
                        WHERE offers IS NOT NULL
                          AND NOT jsonb_path_exists(offers, '$[*] ? (@ == null)')
@@ -148,7 +156,7 @@ class MessageStore:
         """Return the most recent messages that parsed into a tip, newest first."""
         rows = await self._pool.fetch(
             f"""
-            SELECT {_MESSAGE_COLUMNS}, tip, offers FROM messages
+            SELECT {_MESSAGE_COLUMNS}, tip, offers, refusal FROM messages
             WHERE tip IS NOT NULL
             ORDER BY received_at DESC LIMIT $1
             """,

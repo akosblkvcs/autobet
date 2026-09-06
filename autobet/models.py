@@ -71,6 +71,7 @@ class MessageWithTip:
     message: IncomingMessage
     legs: tuple[TipLeg, ...]
     offers: tuple[LegOffer | None, ...] = ()
+    refusal: str = ""
 
     def paired(self) -> list[tuple[TipLeg, LegOffer | None]]:
         """Legs next to what each one resolved to, for rendering."""
@@ -89,10 +90,15 @@ class BetResult:
     """What a bookmaker did with a tip."""
 
     tip: Tip
-    accepted: bool
     reference: str
     placed_at: datetime
     offers: tuple[LegOffer | None, ...] = ()
+    refusal: str = ""
+
+    @property
+    def accepted(self) -> bool:
+        """Whether the bet stands. Derived, so it cannot disagree with the reason."""
+        return not self.refusal
 
     @property
     def total_latency_ms(self) -> int:
