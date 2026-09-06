@@ -1,4 +1,4 @@
-"""The Telegram channel as a tip source."""
+"""The Telegram channels we watch, as a stream of messages."""
 
 # pyright: reportMissingTypeStubs=false, reportGeneralTypeIssues=false
 
@@ -31,7 +31,7 @@ class SessionError(RuntimeError):
         self.fix = fix
 
 
-_DEAD_SESSION = (
+_DEAD_SESSION_ERRORS = (
     AuthKeyDuplicatedError,
     AuthKeyUnregisteredError,
     SessionExpiredError,
@@ -58,13 +58,11 @@ async def connect_authorized(client: TelegramClient) -> None:
     """
     try:
         await client.connect()
-    except _DEAD_SESSION as error:
+    except _DEAD_SESSION_ERRORS as error:
         raise SessionError(
             type(error).__name__, "delete it and run `make login`"
         ) from error
     except sqlite3.OperationalError as error:
-        # Telethon writes on every connect, so a read-only bind mount or a second
-        # client holding the file both land here.
         raise SessionError(str(error), "chown to appuser; run one client only") from error
 
     if not await client.is_user_authorized():
@@ -86,6 +84,7 @@ class TelegramSource:
         self._settings = settings
         chats = list(settings.telegram_source_chat_ids)
         self._queue: asyncio.Queue[IncomingMessage] = asyncio.Queue()
+        self._channels: tuple[str, ...] = ()
         self._client = build_client(settings)
         settings.media_dir.mkdir(parents=True, exist_ok=True)
 
@@ -95,9 +94,20 @@ class TelegramSource:
             )
 
     async def start(self) -> None:
-        """Connect with the stored session and begin receiving updates."""
+        """Connect with the stored session, name the watched chats, and listen."""
         await connect_authorized(self._client)
-        log.info("telegram_connected", watching=self._settings.telegram_source_chat_ids)
+        self._channels = tuple(
+            [
+                getattr(await self._client.get_entity(chat), "title", str(chat))
+                for chat in self._settings.telegram_source_chat_ids
+            ]
+        )
+        log.info("telegram_connected", watching=self._channels)
+
+    @property
+    def channels(self) -> tuple[str, ...]:
+        """Titles of the watched chats, empty until ``start`` has resolved them."""
+        return self._channels
 
     async def _on_message(self, event: Any) -> None:
         received_at = utcnow()
@@ -112,7 +122,6 @@ class TelegramSource:
 
         self._queue.put_nowait(
             IncomingMessage(
-                source=self.name,
                 external_id=message_id(chat_id, int(event.message.id)),
                 channel=getattr(event.chat, "title", None) or str(event.chat_id),
                 sent_at=event.message.date,

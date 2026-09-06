@@ -6,7 +6,7 @@ from datetime import datetime
 
 import structlog
 
-from autobet.bookmakers import Bookmaker
+from autobet.bookmaker import Bookmaker
 from autobet.models import IncomingMessage, Tip, utcnow
 from autobet.storage import MessageStore
 
@@ -45,7 +45,7 @@ async def run_pipeline(
     """Consume one message stream: archive everything, bet on what parses.
 
     Args:
-        messages: Stream from a single tip source.
+        messages: Stream of messages from Telegram.
         store: The archive every message is written to.
         state: Counters updated in place, read by the health endpoint.
         bookmaker: Where a parsed tip gets staked.
@@ -75,7 +75,8 @@ async def run_pipeline(
             state.tips += 1
             result = await bookmaker.place(tip)
 
-            await store.set_tip(tip)
+            await store.set_tip(tip, result.offers)
+
             log.info(
                 "bet_placed" if result.accepted else "bet_rejected",
                 bookmaker=bookmaker.name,

@@ -13,8 +13,8 @@ from telethon import TelegramClient
 from autobet.app import run_service
 from autobet.config import Settings, load_settings
 from autobet.logging import configure_logging
-from autobet.sources.telegram import SessionError, build_client, connect_authorized
 from autobet.storage import MessageStore
+from autobet.telegram import SessionError, build_client, connect_authorized
 
 log = structlog.get_logger(__name__)
 
@@ -42,6 +42,7 @@ async def cmd_login(settings: Settings) -> None:
     await client.start()
 
     print(f"Session written to {settings.telegram_session}")
+
     await client.disconnect()
 
 
@@ -68,7 +69,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     sub = parser.add_subparsers(dest="command", required=True)
 
-    sub.add_parser("run", help="run every configured source and the control plane")
+    sub.add_parser("run", help="run the ingestion pipeline and the control plane")
     sub.add_parser("login", help="interactively create the Telegram session file")
     sub.add_parser("migrate", help="apply pending schema migrations")
 
@@ -76,6 +77,7 @@ def build_parser() -> argparse.ArgumentParser:
     chats.add_argument(
         "--search", help="case-insensitive substring filter on the chat name"
     )
+
     return parser
 
 
@@ -104,6 +106,7 @@ def main(argv: list[str] | None = None) -> int:
             session=str(settings.telegram_session),
             fix=error.fix,
         )
+
         return 1
 
     return 0

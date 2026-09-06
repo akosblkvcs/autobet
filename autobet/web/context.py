@@ -1,6 +1,5 @@
 """What every page needs to render, shared by the routers."""
 
-from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -9,8 +8,8 @@ from fastapi.templating import Jinja2Templates
 
 from autobet.config import Settings
 from autobet.pipeline import PipelineState
-from autobet.sources import TipSource
 from autobet.storage import MessageStore
+from autobet.telegram import TelegramSource
 
 templates = Jinja2Templates(directory=str(Path(__file__).parent / "templates"))
 
@@ -22,8 +21,7 @@ class Context:
     settings: Settings
     store: MessageStore
     state: PipelineState
-    sources: Sequence[TipSource]
-    bookmaker: str
+    source: TelegramSource
 
     def status(self) -> dict[str, Any]:
         """This process only, read from memory so the probe never touches Postgres."""
@@ -31,8 +29,7 @@ class Context:
 
         return {
             "dry_run": self.settings.dry_run,
-            "sources": {source.name: source.healthy() for source in self.sources},
-            "bookmaker": self.bookmaker,
+            "telegram_connected": self.source.healthy(),
             "uptime_seconds": round(self.state.uptime_seconds, 1),
             "messages_seen": self.state.processed,
             "tips_parsed": self.state.tips,

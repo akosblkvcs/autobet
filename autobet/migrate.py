@@ -12,7 +12,7 @@ from asyncpg import Pool
 
 log = structlog.get_logger(__name__)
 
-MIGRATIONS = Path(__file__).parent / "migrations"
+MIGRATIONS_DIR = Path(__file__).parent / "migrations"
 
 
 async def apply_migrations(pool: Pool) -> None:
@@ -23,7 +23,7 @@ async def apply_migrations(pool: Pool) -> None:
     rows = await pool.fetch("SELECT name FROM applied_migrations")
     applied = {row["name"] for row in rows}
 
-    for path in sorted(MIGRATIONS.glob("*.sql")):
+    for path in sorted(MIGRATIONS_DIR.glob("*.sql")):
         if path.name in applied:
             continue
         async with pool.acquire() as conn, conn.transaction():

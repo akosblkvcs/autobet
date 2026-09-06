@@ -5,7 +5,7 @@
 from fastapi import APIRouter, Request
 from fastapi.responses import HTMLResponse
 
-from autobet.web.auth import COOKIE, COOKIE_MAX_AGE, presented_token
+from autobet.web.auth import TOKEN_COOKIE, TOKEN_COOKIE_MAX_AGE, presented_token
 from autobet.web.context import Context, templates
 
 
@@ -29,16 +29,16 @@ def router(context: Context) -> APIRouter:
             request,
             "dashboard.html",
             {
-                "service": context.status(),
+                "service": context.status() | {"channels": list(context.source.channels)},
                 "archive": await context.store.totals()
                 | {"transport_latency_ms": await context.store.latency_percentiles()},
                 "rows": await context.store.recent_tips(50),
             },
         )
         response.set_cookie(
-            COOKIE,
+            TOKEN_COOKIE,
             token,
-            max_age=COOKIE_MAX_AGE,
+            max_age=TOKEN_COOKIE_MAX_AGE,
             httponly=True,
             samesite="lax",
             secure=context.settings.environment == "production",

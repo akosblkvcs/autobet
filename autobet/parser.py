@@ -13,8 +13,8 @@ from autobet.models import IncomingMessage, Tip, TipLeg, utcnow
 
 log = structlog.get_logger(__name__)
 
-_MODEL = "claude-opus-5"
-_PROMPT = """This image is a betting slip from a tipster.
+_VISION_MODEL = "claude-opus-5"
+_SLIP_PROMPT = """This image is a betting slip from a tipster.
 
 Read every selection on it. A slip may hold one selection or several; several
 means an accumulator, so return one leg per selection, in the order shown.
@@ -70,7 +70,7 @@ async def parse_tip(
     image = base64.standard_b64encode(Path(message.media_path).read_bytes()).decode()
     started = utcnow()
     response = await claude.messages.parse(
-        model=_MODEL,
+        model=_VISION_MODEL,
         max_tokens=16000,
         thinking={"type": "adaptive"},
         output_config={"effort": "low"},
@@ -86,7 +86,7 @@ async def parse_tip(
                             "data": image,
                         },
                     },
-                    {"type": "text", "text": _PROMPT},
+                    {"type": "text", "text": _SLIP_PROMPT},
                 ],
             }
         ],
@@ -97,12 +97,14 @@ async def parse_tip(
 
     if slip is None or not slip.legs:
         log.info("no_tip", external_id=message.external_id, vision_ms=vision_ms)
+
         return None
 
     legs = tuple(
         TipLeg(event=leg.event, market=leg.market, selection=leg.selection, odds=leg.odds)
         for leg in slip.legs
     )
+
     log.info(
         "tip_extracted",
         external_id=message.external_id,

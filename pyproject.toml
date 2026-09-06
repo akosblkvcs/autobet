@@ -20,6 +20,8 @@ dev = [
   "ruff>=0.6.0",
   "mypy>=1.14",
   "asyncpg-stubs>=0.31.3",
+  "playwright>=1.48",
+  "websockets>=17.0.1",
 ]
 
 [tool.uv]

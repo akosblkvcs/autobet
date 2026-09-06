@@ -1,13 +1,32 @@
-h2 {
-  font-size: 1rem;
-  margin: 1.5rem 0 .4rem;
-  color: #666;
+/* One dark palette; every colour below is a token so there is one place to change. */
+:root {
+  color-scheme: dark;
+  --bg: #15171b;
+  --fg: #d7dae0;
+  --muted: #868c99;
+  --dim: #a8aebb;
+  --line: #282c34;
+  --drop: #e5707a;
+  --rise: #6cc38a;
 }
 
 body {
   font: 14px/1.5 ui-monospace, monospace;
   margin: 2rem;
   max-width: 70rem;
+  background: var(--bg);
+  color: var(--fg);
+}
+
+h1 {
+  font-size: 1.3rem;
+  margin: 0 0 1.5rem;
+}
+
+h2 {
+  font-size: 1rem;
+  margin: 1.5rem 0 .4rem;
+  color: var(--muted);
 }
 
 .stats {
@@ -18,7 +37,7 @@ body {
 }
 
 .stats dt {
-  color: #666;
+  color: var(--muted);
 }
 
 table {
@@ -27,14 +46,14 @@ table {
 }
 
 td {
-  border-top: 1px solid #ddd;
+  border-top: 1px solid var(--line);
   padding: .4rem;
   vertical-align: top;
 }
 
 .nowrap {
   white-space: nowrap;
-  color: #666;
+  color: var(--muted);
 }
 
 .leg + .leg {
@@ -47,7 +66,7 @@ td {
 
 .leg .market {
   padding-left: 1.2rem;
-  color: #444;
+  color: var(--dim);
 }
 
 .leg .odds {
@@ -56,5 +75,23 @@ td {
 }
 
 .quiet {
-  color: #888;
+  color: var(--muted);
+}
+
+.leg .offer {
+  padding-left: 1rem;
+  font-size: .85em;
+  color: var(--muted);
+}
+
+.leg .offer.unresolved {
+  font-style: italic;
+}
+
+.leg .drop {
+  color: var(--drop);
+}
+
+.leg .rise {
+  color: var(--rise);
 }

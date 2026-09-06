@@ -8,7 +8,7 @@
 <dl class="stats">
   {% for name, value in service.items() %}
   <dt>{{ name.replace("_", " ") }}</dt>
-  <dd>{{ value }}</dd>
+  <dd>{{ value | join(", ") if value is sequence and value is not string else value }}</dd>
   {% endfor %}
 </dl>
 
@@ -26,14 +26,23 @@
   <tr>
     <td class="nowrap">{{ row.message.received_at.strftime("%m-%d %H:%M:%S") }}</td>
     <td class="nowrap">{{ row.message.transport_latency_ms }}&nbsp;ms</td>
-    <td class="nowrap">{{ row.message.source }}</td>
     <td>{{ row.message.channel }}</td>
     <td>
-      {% for leg in row.legs %}
+      {% for leg, offer in row.paired() %}
       <div class="leg">
         <span class="odds">{{ leg.odds }}</span>
         <div class="event">{{ leg.event }}</div>
         <div class="market">{{ leg.market }} &rarr; {{ leg.selection }}</div>
+        {% if offer %}
+        <div class="offer">
+          matched {{ offer.event_name }} &middot; live {{ offer.odds }}
+          <span class="{{ 'drop' if offer.drop_percent > 0 else 'rise' }}">
+            {{ "%+.1f" % -offer.drop_percent }}%
+          </span>
+        </div>
+        {% elif row.offers %}
+        <div class="offer unresolved">no match in the feed</div>
+        {% endif %}
       </div>
       {% endfor %}
       {% if row.legs | length > 1 %}

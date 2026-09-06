@@ -14,18 +14,12 @@ def utcnow() -> datetime:
 class IncomingMessage:
     """A single message as it reached us, whatever carried it."""
 
-    # Name of the TipSource that produced this, e.g. "telegram".
-    source: str
-    # Unique within that source; the source decides how to build it.
     external_id: str
-    # Human label for where it came from: a chat title, an inbox name.
     channel: str
     sent_at: datetime
     received_at: datetime
     text: str
-    # Carrier's name for the attachment.
     media_kind: str | None = None
-    # Where the downloaded attachment landed.
     media_path: str | None = None
 
     @property
@@ -45,14 +39,28 @@ class TipLeg:
 
 
 @dataclass(frozen=True, slots=True)
+class LegOffer:
+    """What one leg of a tip maps to in the bookmaker's own feed."""
+
+    leg: TipLeg
+    event_id: str
+    event_name: str
+    offer_id: str
+    odds: float
+
+    @property
+    def drop_percent(self) -> float:
+        """How far the live price has fallen below the one on the screenshot."""
+        return (self.leg.odds - self.odds) / self.leg.odds * 100
+
+
+@dataclass(frozen=True, slots=True)
 class Tip:
     """A bet suggestion extracted from a message."""
 
     legs: tuple[TipLeg, ...]
-    # What the whole slip pays: every leg multiplied together.
     odds: float
     stake: float
-    # The message it came from, kept for provenance and end-to-end latency.
     message: IncomingMessage
 
 
@@ -62,6 +70,13 @@ class MessageWithTip:
 
     message: IncomingMessage
     legs: tuple[TipLeg, ...]
+    offers: tuple[LegOffer | None, ...] = ()
+
+    def paired(self) -> list[tuple[TipLeg, LegOffer | None]]:
+        """Legs next to what each one resolved to, for rendering."""
+        offers = self.offers or (None,) * len(self.legs)
+
+        return list(zip(self.legs, offers, strict=True))
 
     @property
     def odds(self) -> float:
@@ -75,9 +90,9 @@ class BetResult:
 
     tip: Tip
     accepted: bool
-    # Bookmaker-side identifier for the bet, or a marker like "paper".
     reference: str
     placed_at: datetime
+    offers: tuple[LegOffer | None, ...] = ()
 
     @property
     def total_latency_ms(self) -> int:

@@ -15,7 +15,6 @@ def _split(value: object) -> object:
     return value
 
 
-Names = Annotated[tuple[str, ...], NoDecode, BeforeValidator(_split)]
 ChatIds = Annotated[tuple[int, ...], NoDecode, BeforeValidator(_split)]
 
 
@@ -24,12 +23,6 @@ class Settings(BaseSettings):
 
     environment: Literal["development", "production"] = "development"
     log_level: str = "INFO"
-
-    # Which tip sources to run; keys of autobet.sources.SOURCES.
-    sources: Names = ("telegram",)
-    # Where bets are placed; keys of autobet.bookmakers.BOOKMAKERS.
-    # Ignored while dry_run is on, which always forces the paper book.
-    bookmaker: str = "paper"
 
     # Telegram API credentials from https://my.telegram.org -> API development tools.
     telegram_api_id: int = 0

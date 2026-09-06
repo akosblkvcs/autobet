@@ -1,4 +1,4 @@
-"""Service wiring: one event loop running the control plane and every source."""
+"""Service wiring: one event loop running the control plane and the pipeline."""
 
 import asyncio
 import signal
@@ -7,12 +7,12 @@ from functools import partial
 import structlog
 import uvicorn
 
-from autobet.bookmakers import build_bookmaker
+from autobet.bookmaker import Bookmaker
 from autobet.config import Settings
 from autobet.parser import build_claude, parse_tip
 from autobet.pipeline import PipelineState, run_pipeline
-from autobet.sources import build_sources
 from autobet.storage import MessageStore
+from autobet.telegram import TelegramSource
 from autobet.web import build_app
 
 log = structlog.get_logger(__name__)
@@ -26,30 +26,28 @@ class _ManagedServer(uvicorn.Server):
 
 
 async def run_service(settings: Settings) -> None:
-    """Run every configured source, the bet placer and the control plane."""
+    """Run the Telegram source, the bet placer and the control plane."""
     store = await MessageStore.connect(settings.database_url)
     state = PipelineState()
 
-    sources = build_sources(settings)
-    bookmaker = build_bookmaker(settings)
+    source = TelegramSource(settings)
+    bookmaker = Bookmaker(settings)
     claude = build_claude(settings)
     parse = partial(parse_tip, claude=claude, stake=settings.stake)
 
-    for source in sources:
-        await source.start()
-
+    await source.start()
     await bookmaker.start()
 
     log.info(
         "service_configured",
-        sources=[source.name for source in sources],
+        channels=source.channels,
         bookmaker=bookmaker.name,
         dry_run=settings.dry_run,
     )
 
     server = _ManagedServer(
         uvicorn.Config(
-            build_app(settings, store, state, sources, bookmaker.name),
+            build_app(settings, store, state, source),
             host=settings.http_host,
             port=settings.http_port,
             log_config=None,
@@ -63,19 +61,10 @@ async def run_service(settings: Settings) -> None:
         loop.add_signal_handler(sig, stop.set)
 
     http = asyncio.create_task(server.serve(), name="http")
-    pipelines = [
-        asyncio.create_task(
-            run_pipeline(
-                source.messages(),
-                store,
-                state,
-                bookmaker,
-                parse,
-            ),
-            name=f"pipeline:{source.name}",
-        )
-        for source in sources
-    ]
+    pipeline = asyncio.create_task(
+        run_pipeline(source.messages(), store, state, bookmaker, parse),
+        name="pipeline",
+    )
 
     def report(task: asyncio.Task[None]) -> None:
         """Say why a task ended, since any one of them ending stops the service."""
@@ -84,24 +73,24 @@ async def run_service(settings: Settings) -> None:
 
         stop.set()
 
-    for task in [http, *pipelines]:
+    for task in (http, pipeline):
         task.add_done_callback(report)
 
     log.info("service_started", http=f"http://{settings.http_host}:{settings.http_port}")
+
     await stop.wait()
 
     log.info("service_stopping")
+
     server.should_exit = True
 
-    for task in pipelines:
-        task.cancel()
+    pipeline.cancel()
 
-    await asyncio.gather(http, *pipelines, return_exceptions=True)
+    await asyncio.gather(http, pipeline, return_exceptions=True)
     await bookmaker.stop()
-
-    for source in sources:
-        await source.stop()
+    await source.stop()
 
     await claude.close()
     await store.close()
+
     log.info("service_stopped", processed=state.processed)

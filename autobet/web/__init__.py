@@ -1,6 +1,5 @@
 """The HTTP control plane: one FastAPI app, one router per page."""
 
-from collections.abc import Sequence
 from pathlib import Path
 
 from fastapi import FastAPI
@@ -8,8 +7,8 @@ from fastapi.staticfiles import StaticFiles
 
 from autobet.config import Settings
 from autobet.pipeline import PipelineState
-from autobet.sources import TipSource
 from autobet.storage import MessageStore
+from autobet.telegram import TelegramSource
 from autobet.web import dashboard, health
 from autobet.web.context import Context
 
@@ -18,8 +17,7 @@ def build_app(
     settings: Settings,
     store: MessageStore,
     state: PipelineState,
-    sources: Sequence[TipSource],
-    bookmaker: str,
+    source: TelegramSource,
 ) -> FastAPI:
     """Create the control-plane app with every page mounted.
 
@@ -27,8 +25,7 @@ def build_app(
         settings: Runtime configuration.
         store: The message archive, for read-only views.
         state: Live pipeline counters.
-        sources: The running tip sources, asked whether they are still live.
-        bookmaker: Name of the book that was actually built.
+        source: The running Telegram source, asked whether it is still live.
 
     Returns:
         A FastAPI application.
@@ -38,8 +35,7 @@ def build_app(
         settings=settings,
         store=store,
         state=state,
-        sources=sources,
-        bookmaker=bookmaker,
+        source=source,
     )
 
     app.mount(
