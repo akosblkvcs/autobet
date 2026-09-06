@@ -1,7 +1,6 @@
 """Service wiring: one event loop running the control plane and the pipeline."""
 
 import asyncio
-import os
 import signal
 from functools import partial
 
@@ -28,13 +27,6 @@ class _ManagedServer(uvicorn.Server):
 
 async def run_service(settings: Settings) -> None:
     """Run the Telegram source, the bet placer and the control plane."""
-    log.info(
-        "paths_resolved",
-        session=str(settings.telegram_session),
-        media_dir=str(settings.telegram_media_dir),
-        media_parent_writable=os.access(settings.telegram_media_dir.parent, os.W_OK),
-    )
-
     store = await MessageStore.connect(settings.database_url)
     state = PipelineState()
 
