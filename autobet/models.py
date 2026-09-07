@@ -23,6 +23,11 @@ class IncomingMessage:
     media_path: str | None = None
 
     @property
+    def chat_id(self) -> int:
+        """The chat this came from; ``external_id`` is "{chat_id}:{message_id}"."""
+        return int(self.external_id.split(":", 1)[0])
+
+    @property
     def transport_latency_ms(self) -> int:
         """Milliseconds between the carrier accepting the message and us seeing it."""
         return int((self.received_at - self.sent_at).total_seconds() * 1000)

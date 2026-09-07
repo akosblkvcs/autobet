@@ -22,6 +22,7 @@ class Bookmaker:
         self._dry_run = settings.dry_run
         self._max_drop_percent = settings.max_odds_drop_percent
         self._max_event_days_ahead = settings.max_event_days_ahead
+        self._forced = set(settings.telegram_force_chat_ids)
         self._feed = Feed(settings)
 
     async def start(self) -> None:
@@ -104,6 +105,11 @@ class Bookmaker:
 
         if len(placeable) != len(offers):
             return f"{len(offers) - len(placeable)} of {len(offers)} legs not in the feed"
+
+        if tip.message.chat_id in self._forced:
+            log.info("checks_forced", chat=tip.message.chat_id)
+
+            return ""
 
         furthest = max(offer.days_ahead for offer in placeable)
 

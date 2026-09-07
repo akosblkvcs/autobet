@@ -29,6 +29,7 @@ _WAMP_ERROR = 8
 
 _DISCIPLINES_TOPIC = "disciplines/NOT_LIVE/NOT_VIRTUAL/NOT_SIMULATED"
 _INDEX_REFRESH_SECONDS = 6 * 60 * 60
+_INDEX_WAIT_SECONDS = 150
 _MIN_EVENT_SCORE = 0.85
 _MIN_EVENT_GAP = 0.05
 
@@ -125,6 +126,7 @@ class Feed:
         self._refresh: asyncio.Task[None] | None = None
         self._reader: asyncio.Task[None] | None = None
         self._waiting: dict[int, asyncio.Future[dict[str, Any]]] = {}
+        self._indexed = asyncio.Event()
         self._lock = asyncio.Lock()
 
     async def start(self) -> None:
@@ -300,6 +302,7 @@ class Feed:
                     ]
 
             self._events = events
+            self._indexed.set()
             log.info("feed_indexed", events=len(events), sports=len(sports))
 
     def find_event(self, event: str) -> dict[str, Any] | None:
@@ -332,8 +335,22 @@ class Feed:
 
         return best[1]
 
+    async def _ready(self) -> None:
+        """Wait for the first index, since an empty one resolves nothing."""
+        if self._indexed.is_set():
+            return
+
+        log.info("waiting_for_index")
+        try:
+            async with asyncio.timeout(_INDEX_WAIT_SECONDS):
+                await self._indexed.wait()
+        except TimeoutError:
+            log.warning("index_not_ready")
+
     async def resolve(self, tip: Tip) -> list[LegOffer | None]:
         """Map every leg of a tip to the offer that would be staked."""
+        await self._ready()
+
         return [await self._resolve_leg(leg) for leg in tip.legs]
 
     async def _resolve_leg(self, leg: TipLeg) -> LegOffer | None:

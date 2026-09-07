@@ -55,6 +55,7 @@ class Settings(BaseSettings):
     stake: float = Field(default=100.0, gt=0)
     max_odds_drop_percent: float = Field(default=10.0, gt=0)
     max_event_days_ahead: float = Field(default=7.0, gt=0)
+    telegram_force_chat_ids: ChatIds = ()
 
 
 def load_settings() -> Settings:
