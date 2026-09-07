@@ -5,7 +5,7 @@ import json
 import re
 import unicodedata
 from collections.abc import Sequence
-from datetime import datetime
+from datetime import UTC, datetime
 from difflib import SequenceMatcher
 from typing import Any, cast
 from zoneinfo import ZoneInfo
@@ -89,6 +89,13 @@ def _score(query: str, candidate: str) -> float:
         return 0.85
 
     return SequenceMatcher(None, left, right).ratio()
+
+
+def _starts_at(event: dict[str, Any]) -> datetime | None:
+    """When the feed says this event starts; its `startTime` is epoch millis."""
+    when = event.get("startTime")
+
+    return datetime.fromtimestamp(when / 1000, UTC) if when else None
 
 
 def _describe(parts: list[Any]) -> str:
@@ -393,6 +400,7 @@ class Feed:
                         betting_type_id=str(markets[0].get("bettingTypeId")),
                         offer_id=str(offer["id"]),
                         odds=float(offer["odds"]),
+                        starts_at=_starts_at(event),
                     )
 
         return None

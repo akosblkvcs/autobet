@@ -21,6 +21,7 @@ class Bookmaker:
         self._settings = settings
         self._dry_run = settings.dry_run
         self._max_drop_percent = settings.max_odds_drop_percent
+        self._max_event_days_ahead = settings.max_event_days_ahead
         self._feed = Feed(settings)
 
     async def start(self) -> None:
@@ -103,6 +104,13 @@ class Bookmaker:
 
         if len(placeable) != len(offers):
             return f"{len(offers) - len(placeable)} of {len(offers)} legs not in the feed"
+
+        furthest = max(offer.days_ahead for offer in placeable)
+
+        if furthest > self._max_event_days_ahead:
+            limit = self._max_event_days_ahead
+
+            return f"event is {furthest:.1f} days away, limit {limit:.0f}"
 
         live = math.prod(offer.odds for offer in placeable)
         drop = (tip.odds - live) / tip.odds * 100

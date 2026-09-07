@@ -50,11 +50,20 @@ class LegOffer:
     betting_type_id: str
     offer_id: str
     odds: float
+    starts_at: datetime | None = None
 
     @property
     def drop_percent(self) -> float:
         """How far the live price has fallen below the one on the screenshot."""
         return (self.leg.odds - self.odds) / self.leg.odds * 100
+
+    @property
+    def days_ahead(self) -> float:
+        """How far off the event is, or 0.0 when the feed gave no start time."""
+        if self.starts_at is None:
+            return 0.0
+
+        return (self.starts_at - utcnow()).total_seconds() / 86400
 
 
 @dataclass(frozen=True, slots=True)

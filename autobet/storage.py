@@ -56,6 +56,7 @@ def _to_offer(row: Record, leg: TipLeg) -> LegOffer | None:
         betting_type_id=row["betting_type_id"],
         offer_id=row["offer_id"],
         odds=float(row["live_odds"]),
+        starts_at=row["starts_at"],
     )
 
 
@@ -121,9 +122,9 @@ class MessageStore:
                     INSERT INTO legs (
                         tip_id, position, event, market, selection, odds,
                         event_id, event_name, market_id, outcome_id,
-                        betting_type_id, offer_id, live_odds
+                        betting_type_id, offer_id, live_odds, starts_at
                     )
-                    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+                    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
                     """,
                     tip_id,
                     position,
@@ -138,6 +139,7 @@ class MessageStore:
                     offer.betting_type_id if offer else None,
                     offer.offer_id if offer else None,
                     offer.odds if offer else None,
+                    offer.starts_at if offer else None,
                 )
 
             if result is not None:

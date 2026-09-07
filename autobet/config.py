@@ -54,6 +54,7 @@ class Settings(BaseSettings):
     dry_run: bool = True
     stake: float = Field(default=100.0, gt=0)
     max_odds_drop_percent: float = Field(default=10.0, gt=0)
+    max_event_days_ahead: float = Field(default=7.0, gt=0)
 
 
 def load_settings() -> Settings:
