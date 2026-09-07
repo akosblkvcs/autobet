@@ -41,6 +41,10 @@ class Settings(BaseSettings):
     book_username: str = ""
     book_password: SecretStr = SecretStr("")
 
+    quiet_from_hour: int = Field(default=23, ge=0, le=23)
+    quiet_until_hour: int = Field(default=7, ge=0, le=23)
+    quiet_timezone: str = "Europe/Budapest"
+
     database_url: str = "postgresql://autobet:autobet@localhost:5432/autobet"
 
     http_host: str = "127.0.0.1"

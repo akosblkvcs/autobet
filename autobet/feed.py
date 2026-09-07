@@ -5,8 +5,10 @@ import json
 import re
 import unicodedata
 from collections.abc import Sequence
+from datetime import datetime
 from difflib import SequenceMatcher
 from typing import Any, cast
+from zoneinfo import ZoneInfo
 
 import structlog
 from websockets.asyncio.client import ClientConnection, connect
@@ -26,7 +28,7 @@ _WAMP_RESULT = 50
 _WAMP_ERROR = 8
 
 _DISCIPLINES_TOPIC = "disciplines/NOT_LIVE/NOT_VIRTUAL/NOT_SIMULATED"
-_INDEX_REFRESH_SECONDS = 900
+_INDEX_REFRESH_SECONDS = 6 * 60 * 60
 _MIN_EVENT_SCORE = 0.85
 _MIN_EVENT_GAP = 0.05
 
@@ -238,10 +240,26 @@ class Feed:
                 if waiting is not None and not waiting.done():
                     waiting.set_result({_FAILED: _describe(message[4:])})
 
+    def _asleep(self) -> bool:
+        """Whether we are inside the hours the tipster does not post."""
+        start = self._settings.quiet_from_hour
+        end = self._settings.quiet_until_hour
+
+        if start == end:
+            return False
+
+        hour = datetime.now(ZoneInfo(self._settings.quiet_timezone)).hour
+
+        return start <= hour < end if start < end else hour >= start or hour < end
+
     async def _keep_fresh(self) -> None:
         """Index now, then rebuild forever, so a tip never waits for one."""
         while True:
-            await self._reindex()
+            if self._asleep():
+                log.info("index_asleep")
+            else:
+                await self._reindex()
+
             await asyncio.sleep(_INDEX_REFRESH_SECONDS)
 
     async def _reindex(self) -> None:
