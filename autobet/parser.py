@@ -3,6 +3,7 @@
 import base64
 import math
 from pathlib import Path
+from typing import Literal
 
 import structlog
 from anthropic import AsyncAnthropic
@@ -14,10 +15,24 @@ from autobet.models import IncomingMessage, Tip, TipLeg, utcnow
 log = structlog.get_logger(__name__)
 
 _VISION_MODEL = "claude-opus-5"
-_SLIP_PROMPT = """This image is a betting slip from a tipster.
+_SLIP_PROMPT = """This image was posted by a sports betting tipster. Decide what
+it is, then read it.
 
-Read every selection on it. A slip may hold one selection or several; several
-means an accumulator, so return one leg per selection, in the order shown.
+kind:
+- "to_place" — a betting slip proposing a bet that has not been settled: it
+  shows selections with their odds, and no result.
+- "settled" — anything reporting what already happened: a won or lost slip, a
+  results announcement, or a month-end recap listing many past bets, usually
+  with ticks, crosses, a profit total or a balance.
+- "other" — anything else, such as marketing, a league header or a photo that
+  is not a slip at all.
+
+Only "to_place" is a bet we can make. **A recap listing many settled bets is
+"settled", never an accumulator** — the bets on it are separate and already
+finished, and staking them as one slip would be a wager nobody proposed.
+
+For "to_place", return one leg per selection, in the order shown; several
+selections mean an accumulator. For anything else return no legs.
 
 - event: the two teams or competitors, as printed.
 - market: the bet type, as printed, such as "1X2 - Rendes játékidő" or
@@ -27,8 +42,7 @@ means an accumulator, so return one leg per selection, in the order shown.
   as the decimal separator, so "1,82" and "1.82" are both 1.82.
 
 Keep the wording exactly as it appears, in its original language; it has to
-match the bookmaker's own page later. Return no legs at all if the image is
-not a betting slip."""
+match the bookmaker's own page later."""
 
 
 class _Leg(BaseModel):
@@ -41,8 +55,9 @@ class _Leg(BaseModel):
 
 
 class _Slip(BaseModel):
-    """The whole betslip. Empty legs means the image was not one."""
+    """What the image is, and the selections on it if it proposes a bet."""
 
+    kind: Literal["to_place", "settled", "other"]
     legs: list[_Leg]
 
 
@@ -95,8 +110,13 @@ async def parse_tip(
     slip = response.parsed_output
     vision_ms = int((utcnow() - started).total_seconds() * 1000)
 
-    if slip is None or not slip.legs:
-        log.info("no_tip", external_id=message.external_id, vision_ms=vision_ms)
+    if slip is None or slip.kind != "to_place" or not slip.legs:
+        log.info(
+            "no_tip",
+            external_id=message.external_id,
+            kind=slip.kind if slip else None,
+            vision_ms=vision_ms,
+        )
 
         return None
 

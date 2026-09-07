@@ -6,7 +6,7 @@ from dataclasses import replace
 import structlog
 
 from autobet.config import Settings
-from autobet.feed import Feed
+from autobet.feed import Feed, NotLoggedInError
 from autobet.models import BetResult, LegOffer, Tip, utcnow
 from autobet.session import mint_ce_session
 
@@ -77,7 +77,15 @@ class Bookmaker:
             return result
 
         placeable = [offer for offer in offers if offer is not None]
-        answer = await self._feed.place_bet(placeable, tip.stake)
+
+        try:
+            answer = await self._feed.place_bet(placeable, tip.stake)
+        except NotLoggedInError:
+            log.info("session_expired_reminting")
+
+            await self._feed.authenticate(await mint_ce_session(self._settings))
+            answer = await self._feed.place_bet(placeable, tip.stake)
+
         reference = str(answer.get("betId") or answer.get("id") or "")
 
         if not reference:

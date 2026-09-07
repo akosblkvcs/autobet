@@ -6,7 +6,7 @@ import re
 import unicodedata
 from collections.abc import Sequence
 from difflib import SequenceMatcher
-from typing import Any
+from typing import Any, cast
 
 import structlog
 from websockets.asyncio.client import ClientConnection, connect
@@ -20,6 +20,7 @@ _WAMP_ROLES: dict[str, Any] = {
     "agent": "autobet",
     "roles": {"caller": {}, "subscriber": {}},
 }
+_FAILED = "__feed_error__"
 _WAMP_CALL = 48
 _WAMP_RESULT = 50
 _WAMP_ERROR = 8
@@ -84,6 +85,17 @@ def _score(query: str, candidate: str) -> float:
         return 0.85
 
     return SequenceMatcher(None, left, right).ratio()
+
+
+def _describe(parts: list[Any]) -> str:
+    """The human-readable half of a WAMP error frame, if it carries one."""
+    for part in parts:
+        if isinstance(part, dict):
+            described = cast("dict[str, Any]", part)
+            if described.get("desc"):
+                return str(described["desc"])
+
+    return str(parts)
 
 
 class NotLoggedInError(RuntimeError):
@@ -197,11 +209,17 @@ class Feed:
             json.dumps([_WAMP_CALL, mine, {}, procedure, [], arguments])
         )
         result = await waiting
+        failure = result.pop(_FAILED, None)
 
-        if not result:
-            log.warning("feed_call_failed", procedure=procedure)
+        if failure is None:
+            return result
 
-        return result
+        log.warning("feed_call_failed", procedure=procedure, detail=failure)
+
+        if "logged in" in failure.lower():
+            raise NotLoggedInError(failure)
+
+        return {}
 
     async def _read_answers(self) -> None:
         """Own ``recv`` and hand each answer to whoever asked for it."""
@@ -218,8 +236,7 @@ class Feed:
             elif message[0] == _WAMP_ERROR:
                 waiting = self._waiting.pop(message[2], None)
                 if waiting is not None and not waiting.done():
-                    log.warning("feed_error", detail=message[4:])
-                    waiting.set_result({})
+                    waiting.set_result({_FAILED: _describe(message[4:])})
 
     async def _keep_fresh(self) -> None:
         """Index now, then rebuild forever, so a tip never waits for one."""
