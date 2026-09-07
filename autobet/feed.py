@@ -43,13 +43,15 @@ _SELECTION_KEYS = {
     "draw": "draw",
     "x": "draw",
 }
+_TRANSLITERATED = str.maketrans({"j": "i", "y": "i", "w": "v", "k": "c"})
 
 
 def _fold(text: str) -> str:
-    """Strip accents and case."""
+    """Strip accents, case and transliteration differences."""
     stripped = unicodedata.normalize("NFKD", text)
+    plain = "".join(c for c in stripped if not unicodedata.combining(c))
 
-    return "".join(c for c in stripped if not unicodedata.combining(c)).casefold().strip()
+    return plain.casefold().translate(_TRANSLITERATED).strip()
 
 
 def _normalise(name: str) -> str:
