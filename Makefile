@@ -1,4 +1,4 @@
-.PHONY: install fmt lint types check run dev login chats migrate psql db-reset
+.PHONY: install fmt lint types check run dev login chats migrate psql db-reset db-wipe
 
 install:
 	uv sync
@@ -39,5 +39,6 @@ db-reset:
 	docker compose up -d postgres
 
 db-wipe:
-	docker compose exec postgres psql -U postgres -d autobet -c "DROP SCHEMA public CASCADE; CREATE SCHEMA public;"
+	docker compose exec postgres psql -U postgres -d autobet -c \
+	  "DROP TABLE IF EXISTS bets, legs, tips, messages, applied_migrations CASCADE;"
 
