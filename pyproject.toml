@@ -15,6 +15,7 @@ dependencies = [
   "jinja2>=3.1",
   "websockets>=17.1",
   "httpx2>=2.12",
+  "humanize>=4.16.0",
 ]
 
 [dependency-groups]

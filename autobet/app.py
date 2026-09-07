@@ -46,7 +46,7 @@ async def run_service(settings: Settings) -> None:
 
     server = _ManagedServer(
         uvicorn.Config(
-            build_app(settings, store, state, source),
+            build_app(settings, store, state, source, bookmaker),
             host=settings.http_host,
             port=settings.http_port,
             log_config=None,

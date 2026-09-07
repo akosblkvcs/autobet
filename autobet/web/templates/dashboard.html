@@ -3,24 +3,38 @@
 {% block body %}
 <h1>autobet</h1>
 
-{# Split so it is obvious which numbers reset on restart and which do not. #}
-<h2>This run</h2>
+{# A list renders one item per line, so several channels stay readable. #}
+{% macro stats(rows) %}
 <dl class="stats">
-  {% for name, value in service.items() %}
+  {% for name, value in rows.items() %}
   <dt>{{ name.replace("_", " ") }}</dt>
-  <dd>{{ value | join(", ") if value is sequence and value is not string else value }}</dd>
+  <dd>
+    {%- if value is mapping -%}
+      {% for key, inner in value.items() %}<div>{{ key }} {{ inner }}</div>{% endfor %}
+    {%- elif value is sequence and value is not string -%}
+      {% for item in value %}<div>{{ item }}</div>{% endfor %}
+    {%- else -%}
+      {{ value }}
+    {%- endif -%}
+  </dd>
   {% endfor %}
 </dl>
+{% endmacro %}
 
-<h2>Archive</h2>
-<dl class="stats">
-  {% for name, value in archive.items() %}
-  <dt>{{ name.replace("_", " ") }}</dt>
-  <dd>{{ value }}</dd>
-  {% endfor %}
-</dl>
+{# Counters here reset when the process restarts; the ones under Totals do not. #}
+<h2>Service</h2>
+{{ stats(service) }}
 
-<h2>Recent tips</h2>
+<h2>Feed</h2>
+{{ stats(feed) }}
+
+<h2>Limits</h2>
+{{ stats(limits) }}
+
+<h2>Totals</h2>
+{{ stats(totals) }}
+
+<h2>Tips</h2>
 <table>
   {% for row in rows %}
   <tr>

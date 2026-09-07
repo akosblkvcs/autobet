@@ -5,6 +5,7 @@ from pathlib import Path
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 
+from autobet.bookmaker import Bookmaker
 from autobet.config import Settings
 from autobet.pipeline import PipelineState
 from autobet.storage import MessageStore
@@ -18,6 +19,7 @@ def build_app(
     store: MessageStore,
     state: PipelineState,
     source: TelegramSource,
+    bookmaker: Bookmaker,
 ) -> FastAPI:
     """Create the control-plane app with every page mounted.
 
@@ -26,6 +28,7 @@ def build_app(
         store: The message archive, for read-only views.
         state: Live pipeline counters.
         source: The running Telegram source, asked whether it is still live.
+        bookmaker: Asked how fresh its event index is.
 
     Returns:
         A FastAPI application.
@@ -36,6 +39,7 @@ def build_app(
         store=store,
         state=state,
         source=source,
+        bookmaker=bookmaker,
     )
 
     app.mount(

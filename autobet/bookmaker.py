@@ -25,6 +25,11 @@ class Bookmaker:
         self._forced = set(settings.telegram_force_chat_ids)
         self._feed = Feed(settings)
 
+    @property
+    def feed(self) -> Feed:
+        """The feed client, so the dashboard can report how fresh it is."""
+        return self._feed
+
     async def start(self) -> None:
         """Connect the feed; its event index fills in behind us."""
         await self._feed.start()

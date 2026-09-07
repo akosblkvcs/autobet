@@ -30,7 +30,9 @@ def router(context: Context) -> APIRouter:
             "dashboard.html",
             {
                 "service": context.status() | {"channels": list(context.source.channels)},
-                "archive": await context.store.totals()
+                "feed": context.feed(),
+                "limits": context.limits(),
+                "totals": await context.store.totals()
                 | {"transport_latency_ms": await context.store.latency_percentiles()},
                 "rows": await context.store.recent_tips(50),
             },

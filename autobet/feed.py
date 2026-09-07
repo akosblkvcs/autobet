@@ -127,6 +127,7 @@ class Feed:
         self._reader: asyncio.Task[None] | None = None
         self._waiting: dict[int, asyncio.Future[dict[str, Any]]] = {}
         self._indexed = asyncio.Event()
+        self._indexed_at: datetime | None = None
         self._lock = asyncio.Lock()
 
     async def start(self) -> None:
@@ -198,6 +199,11 @@ class Feed:
     def events(self) -> int:
         """How many events the index currently holds."""
         return len(self._events)
+
+    @property
+    def indexed_at(self) -> datetime | None:
+        """When the index last finished, or None if it never has."""
+        return self._indexed_at
 
     async def _call(self, topic: str) -> list[dict[str, Any]]:
         """Ask for a topic's initial dump and return its records."""
@@ -302,6 +308,7 @@ class Feed:
                     ]
 
             self._events = events
+            self._indexed_at = datetime.now(UTC)
             self._indexed.set()
             log.info("feed_indexed", events=len(events), sports=len(sports))
 
