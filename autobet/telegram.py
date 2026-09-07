@@ -1,6 +1,7 @@
 """The Telegram channels we watch, as a stream of messages."""
 
 # pyright: reportMissingTypeStubs=false, reportGeneralTypeIssues=false
+# pyright: reportUnknownMemberType=false
 
 import asyncio
 import sqlite3
@@ -96,13 +97,30 @@ class TelegramSource:
     async def start(self) -> None:
         """Connect with the stored session, name the watched chats, and listen."""
         await connect_authorized(self._client)
+        await self._client.get_dialogs()
+
         self._channels = tuple(
             [
-                getattr(await self._client.get_entity(chat), "title", str(chat))
+                await self._name_of(chat)
                 for chat in self._settings.telegram_source_chat_ids
             ]
         )
         log.info("telegram_connected", watching=self._channels)
+
+    async def _name_of(self, chat: int) -> str:
+        """A human label for a watched chat, falling back to its id."""
+        try:
+            entity = await self._client.get_entity(chat)
+        except (ValueError, TypeError):
+            log.warning("chat_unnamed", chat=chat)
+
+            return str(chat)
+
+        name: str | None = getattr(entity, "title", None) or getattr(
+            entity, "username", None
+        )
+
+        return name or str(chat)
 
     @property
     def channels(self) -> tuple[str, ...]:
