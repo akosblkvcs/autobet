@@ -272,7 +272,7 @@ class Feed:
     async def _keep_fresh(self) -> None:
         """Index now, then rebuild forever, so a tip never waits for one."""
         while True:
-            if self._asleep():
+            if self._asleep() and self._indexed.is_set():
                 log.info("index_asleep")
             else:
                 await self._reindex()
