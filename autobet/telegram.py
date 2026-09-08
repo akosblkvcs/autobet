@@ -42,8 +42,6 @@ _DEAD_SESSION_ERRORS = (
 
 def build_client(settings: Settings) -> TelegramClient:
     """Construct a Telethon client pointed at the persistent session file."""
-    settings.telegram_session.parent.mkdir(parents=True, exist_ok=True)
-
     return TelegramClient(
         str(settings.telegram_session),
         settings.telegram_api_id,

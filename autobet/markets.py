@@ -16,7 +16,7 @@ from typing import Any
 
 import structlog
 
-from autobet.feed import Feed, IndexedEvent, _two_sides
+from autobet.feed import Feed, IndexedEvent, two_sides
 
 log = structlog.get_logger(__name__)
 
@@ -40,7 +40,7 @@ def family(name: str, sides: tuple[str, str] | None) -> str:
 
 def families_of(records: list[dict[str, Any]], event: IndexedEvent) -> set[str]:
     """Every bet type one event's market list holds."""
-    sides = _two_sides(event.name)
+    sides = two_sides(event.name)
 
     return {
         family(str(record["name"]), sides)

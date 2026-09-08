@@ -124,7 +124,7 @@ def _initials(folded: str) -> str:
     return "".join(word[0] for word in folded.split() if word)
 
 
-def _two_sides(name: str) -> tuple[str, str] | None:
+def two_sides(name: str) -> tuple[str, str] | None:
     """Split `A - B` or `A vs. B` into its two competitors, or None."""
     parts = [part.strip() for part in _FIXTURE_SIDES.split(name)]
 
@@ -469,7 +469,7 @@ class Feed:
 
     def find_event(self, fixture: str) -> IndexedEvent | None:
         """Which indexed event a tip's event line names, or None if unclear."""
-        sides = _two_sides(fixture)
+        sides = two_sides(fixture)
         if sides is None:
             return None
 
@@ -615,7 +615,7 @@ def _selection(leg: TipLeg, event: IndexedEvent) -> tuple[str | None, str | None
     folded = _fold(leg.selection)
     pieces = [_piece(part, event) for part in _parts(leg.selection)]
     named = [piece for piece in pieces if piece is not None]
-    whole = frozenset(named) if len(named) == len(pieces) else frozenset()
+    whole: frozenset[str] = frozenset(named) if len(named) == len(pieces) else frozenset()
 
     key = _SELECTION_KEYS.get(folded) or _over_under(folded) or _SIDE_KEYS.get(whole)
     code = " / ".join(_SIDE_CODES[piece] for piece in named) if whole else None

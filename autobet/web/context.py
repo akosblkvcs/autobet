@@ -11,7 +11,7 @@ from autobet.bookmaker import Bookmaker
 from autobet.config import Settings
 from autobet.models import utcnow
 from autobet.pipeline import PipelineState
-from autobet.storage import MessageStore
+from autobet.storage import Store
 from autobet.telegram import TelegramSource
 
 templates = Jinja2Templates(directory=str(Path(__file__).parent / "templates"))
@@ -22,7 +22,7 @@ class Context:
     """Everything the pages read, built once and closed over by each router."""
 
     settings: Settings
-    store: MessageStore
+    store: Store
     state: PipelineState
     source: TelegramSource
     bookmaker: Bookmaker
@@ -30,9 +30,9 @@ class Context:
     def limits(self) -> dict[str, Any]:
         """The settings that decide whether a tip becomes a bet."""
         return {
-            "stake": f"{self.settings.stake:g}",
+            "stake": str(self.settings.stake),
             "max_odds_drop": f"{self.settings.max_odds_drop_percent:g}%",
-            "max_event_days_ahead": f"{self.settings.max_event_days_ahead:g}",
+            "max_event_days_ahead": str(self.settings.max_event_days_ahead),
             "quiet_hours": (
                 f"{self.settings.quiet_from_hour:02d}:00-"
                 f"{self.settings.quiet_until_hour:02d}:00 "

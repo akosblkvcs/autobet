@@ -11,7 +11,7 @@ from autobet.bookmaker import Bookmaker
 from autobet.config import Settings
 from autobet.parser import build_claude, build_text_prompt, parse_tip
 from autobet.pipeline import PipelineState, run_pipeline
-from autobet.storage import MessageStore
+from autobet.storage import Store
 from autobet.telegram import TelegramSource
 from autobet.web import build_app
 
@@ -27,7 +27,7 @@ class _ManagedServer(uvicorn.Server):
 
 async def run_service(settings: Settings) -> None:
     """Run the Telegram source, the bet placer and the control plane."""
-    store = await MessageStore.connect(settings.database_url)
+    store = await Store.connect(settings.database_url)
     state = PipelineState()
 
     source = TelegramSource(settings)

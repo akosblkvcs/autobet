@@ -8,7 +8,7 @@ import structlog
 
 from autobet.bookmaker import Bookmaker
 from autobet.models import BetResult, IncomingMessage, Tip, utcnow
-from autobet.storage import MessageStore
+from autobet.storage import Store
 
 log = structlog.get_logger(__name__)
 
@@ -37,7 +37,7 @@ class PipelineState:
 
 async def run_pipeline(
     messages: AsyncIterator[IncomingMessage],
-    store: MessageStore,
+    store: Store,
     state: PipelineState,
     bookmaker: Bookmaker,
     parse: Callable[[IncomingMessage], Awaitable[Tip | None]],

@@ -126,7 +126,7 @@ class Bookmaker:
         if furthest > self._max_event_days_ahead:
             limit = self._max_event_days_ahead
 
-            return f"event is {furthest:.1f} days away, limit {limit:.0f}"
+            return f"event is {furthest:.1f} days away, limit {limit}"
 
         live = math.prod(offer.odds for offer in placeable)
         drop = (tip.odds - live) / tip.odds * 100

@@ -8,7 +8,7 @@ from fastapi.staticfiles import StaticFiles
 from autobet.bookmaker import Bookmaker
 from autobet.config import Settings
 from autobet.pipeline import PipelineState
-from autobet.storage import MessageStore
+from autobet.storage import Store
 from autobet.telegram import TelegramSource
 from autobet.web import dashboard, health
 from autobet.web.context import Context
@@ -16,7 +16,7 @@ from autobet.web.context import Context
 
 def build_app(
     settings: Settings,
-    store: MessageStore,
+    store: Store,
     state: PipelineState,
     source: TelegramSource,
     bookmaker: Bookmaker,
@@ -25,7 +25,7 @@ def build_app(
 
     Args:
         settings: Runtime configuration.
-        store: The message archive, for read-only views.
+        store: The database, for read-only views.
         state: Live pipeline counters.
         source: The running Telegram source, asked whether it is still live.
         bookmaker: Asked how fresh its event index is.

@@ -1,40 +1,36 @@
 """Command line entrypoints."""
 
-# pyright: reportMissingTypeStubs=false, reportUnknownMemberType=false
-# pyright: reportUnknownVariableType=false, reportUnknownArgumentType=false
-# pyright: reportGeneralTypeIssues=false, reportArgumentType=false
+# pyright: reportUnknownArgumentType=false, reportUnknownMemberType=false
+# pyright: reportUnknownVariableType=false, reportGeneralTypeIssues=false
 
 import argparse
 import asyncio
 
 import structlog
-from telethon import TelegramClient
 
 from autobet import markets
 from autobet.app import run_service
 from autobet.config import Settings, load_settings
 from autobet.feed import Feed
 from autobet.logging import configure_logging
-from autobet.storage import MessageStore
+from autobet.storage import Store
 from autobet.telegram import SessionError, build_client, connect_authorized
 
 log = structlog.get_logger(__name__)
 
 
-async def _connected(settings: Settings) -> TelegramClient:
-    """Build and connect a client for the one-shot commands."""
-    client = build_client(settings)
+def build_parser() -> argparse.ArgumentParser:
+    """Build the top-level argument parser."""
+    parser = argparse.ArgumentParser()
+    sub = parser.add_subparsers(dest="command", required=True)
 
-    await connect_authorized(client)
+    sub.add_parser("run")
+    sub.add_parser("login")
+    sub.add_parser("chats")
+    sub.add_parser("migrate")
+    sub.add_parser("markets")
 
-    return client
-
-
-async def cmd_migrate(settings: Settings) -> None:
-    """Apply pending migrations; `run` does this on startup too."""
-    store = await MessageStore.connect(settings.database_url)
-
-    await store.close()
+    return parser
 
 
 async def cmd_login(settings: Settings) -> None:
@@ -48,30 +44,32 @@ async def cmd_login(settings: Settings) -> None:
     await client.disconnect()
 
 
-async def cmd_chats(settings: Settings, search: str | None) -> None:
-    """List every dialog with its numeric id, for TELEGRAM_SOURCE_CHAT_IDS."""
-    client = await _connected(settings)
+async def cmd_chats(settings: Settings) -> None:
+    """List every chat the session can see, with their ids and names."""
+    client = build_client(settings)
+
+    await connect_authorized(client)
 
     async for dialog in client.iter_dialogs():
-        name = dialog.name or ""
-
-        if search and search.casefold() not in name.casefold() and not dialog.is_channel:
-            continue
-
-        print(f"{dialog.id:>16}  {name}")
+        print(f"{dialog.id:>16}  {dialog.name}")
 
     await client.disconnect()
+
+
+async def cmd_migrate(settings: Settings) -> None:
+    """Apply pending migrations; `run` does this on startup too."""
+    store = await Store.connect(settings.database_url)
+
+    await store.close()
 
 
 async def cmd_markets(settings: Settings) -> None:
     """Harvest the bookmaker's bet types so the parser can name them."""
     feed = Feed(settings)
-
     await feed.start()
     await feed.indexed()
 
     vocabulary = await markets.harvest(feed, feed.indexed_events)
-
     markets.save(vocabulary)
 
     print(
@@ -80,27 +78,6 @@ async def cmd_markets(settings: Settings) -> None:
     )
 
     await feed.stop()
-
-
-def build_parser() -> argparse.ArgumentParser:
-    """Build the top-level argument parser."""
-    parser = argparse.ArgumentParser(
-        prog="autobet",
-        description="Tip ingestion and automated bet placement.",
-    )
-    sub = parser.add_subparsers(dest="command", required=True)
-
-    sub.add_parser("run", help="run the ingestion pipeline and the control plane")
-    sub.add_parser("login", help="interactively create the Telegram session file")
-    sub.add_parser("migrate", help="apply pending schema migrations")
-    sub.add_parser("markets", help="harvest the bookmaker's bet types")
-
-    chats = sub.add_parser("chats", help="list chat ids visible to this account")
-    chats.add_argument(
-        "--search", help="case-insensitive substring filter on the chat name"
-    )
-
-    return parser
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -112,17 +89,19 @@ def main(argv: list[str] | None = None) -> int:
     )
 
     try:
-        match args.command:  # pyright: ignore[reportMatchNotExhaustive]
+        match args.command:
             case "run":
                 asyncio.run(run_service(settings))
             case "login":
                 asyncio.run(cmd_login(settings))
+            case "chats":
+                asyncio.run(cmd_chats(settings))
             case "migrate":
                 asyncio.run(cmd_migrate(settings))
             case "markets":
                 asyncio.run(cmd_markets(settings))
-            case "chats":
-                asyncio.run(cmd_chats(settings, args.search))
+            case _:
+                pass
     except SessionError as error:
         log.error(
             "session_unusable",

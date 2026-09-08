@@ -2,17 +2,15 @@
 
 import logging
 import sys
+from typing import Literal
 
 import structlog
 
+LogLevel = Literal["DEBUG", "INFO", "WARNING", "ERROR"]
 
-def configure_logging(level: str = "INFO", *, json_output: bool = False) -> None:
-    """Configure structlog and the stdlib root logger.
 
-    Args:
-        level: Minimum level name, e.g. ``"INFO"``.
-        json_output: Emit JSON lines instead of human-readable console output.
-    """
+def configure_logging(level: LogLevel, *, json_output: bool = False) -> None:
+    """Configure structlog and the stdlib root logger."""
     renderer: structlog.typing.Processor = (
         structlog.processors.JSONRenderer()
         if json_output
@@ -28,9 +26,9 @@ def configure_logging(level: str = "INFO", *, json_output: bool = False) -> None
             renderer,
         ],
         wrapper_class=structlog.make_filtering_bound_logger(
-            logging.getLevelNamesMapping()[level.upper()]
+            logging.getLevelNamesMapping()[level]
         ),
         logger_factory=structlog.PrintLoggerFactory(sys.stdout),
         cache_logger_on_first_use=True,
     )
-    logging.basicConfig(format="%(message)s", stream=sys.stdout, level=level.upper())
+    logging.basicConfig(format="%(message)s", stream=sys.stdout, level=level)

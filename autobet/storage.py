@@ -1,4 +1,4 @@
-"""Postgres archive of every message we observed, and what became of it."""
+"""Postgres storage: every message we observed, and everything it became."""
 
 from __future__ import annotations
 
@@ -60,15 +60,19 @@ def _to_offer(row: Record, leg: TipLeg) -> LegOffer | None:
     )
 
 
-class MessageStore:
-    """The archive, owning its own connection pool."""
+class Store:
+    """Every table the app writes, owning its own connection pool.
+
+    It began as an archive of messages and now spans `messages`, `tips`,
+    `legs` and `bets`, so the name says what it is rather than what it holds.
+    """
 
     def __init__(self, pool: Pool) -> None:
         """Wrap an open pool; use :meth:`connect` rather than calling this."""
         self._pool = pool
 
     @classmethod
-    async def connect(cls, dsn: str) -> MessageStore:
+    async def connect(cls, dsn: str) -> Store:
         """Open the pool and bring the schema up to date."""
         # Coolify's proxy drops idle connections, so retire them before it does.
         pool = await create_pool(
