@@ -10,6 +10,7 @@ from anthropic import AsyncAnthropic
 from anthropic.types import ContentBlockParam
 from pydantic import BaseModel
 
+from autobet import markets
 from autobet.config import Settings
 from autobet.models import IncomingMessage, Tip, TipLeg, utcnow
 
@@ -67,18 +68,17 @@ mean an accumulator.
 - market: **the bookmaker's name for the bet type, not the tipster's phrasing.**
   The tipster writes prose; translate it to the market the bookmaker lists, in
   Hungarian, including the event part. For example:
-    "X nyer (rendes játékidő)"          -> "1X2 - Rendes játékidő"
-    "Mindkét csapat szerez gólt - igen" -> "Mindkét csapat szerez gólt - Rendes játékidő"
-    "Over 2.5 gól"                      -> "Gólszám 2.5 - Rendes játékidő"
-    "Kétesély 1X"                       -> "Kétesély - Rendes játékidő"
-  If you cannot map it confidently to a market a bookmaker would list, return
-  no legs rather than inventing one.
+    "X nyer (rendes játékidő)"         -> "1X2 - Rendes játékidő"
+    "Over 2.5 gól"                     -> "Gólszám 2.5 - Rendes játékidő"
+    "X -2 ázsiai hendikep"             -> "Ázsiai hendikep -2 - Rendes játékidő"
+  A handicap or total line belongs in the market name and never in the
+  selection: the market is "Ázsiai hendikep -2" and the selection is the plain
+  team name. If you cannot map it confidently to a market a bookmaker would
+  list, return no legs rather than inventing one.
 - selection: what is being backed, as the bookmaker would label it — a team
   name for a winner market, "Igen"/"Nem" for both-teams-to-score, "Több, mint
   N"/"Kevesebb, mint N" for totals, "Döntetlen" for a draw.
 - odds: the decimal odds, as a number.
-
-The message:
 """
 
 
@@ -103,7 +103,14 @@ def build_claude(settings: Settings) -> AsyncAnthropic:
     return AsyncAnthropic(api_key=settings.claude_api_key)
 
 
-def _content(message: IncomingMessage) -> list[ContentBlockParam] | None:
+def build_text_prompt() -> str:
+    """The text prompt, with the bookmaker's own bet types appended to it."""
+    return _TEXT_PROMPT + markets.as_prompt(markets.load())
+
+
+def _content(
+    message: IncomingMessage, text_prompt: str
+) -> list[ContentBlockParam] | None:
     """What to send the model for this message, or None if there is nothing."""
     if message.media_path is not None:
         image = base64.standard_b64encode(Path(message.media_path).read_bytes()).decode()
@@ -121,13 +128,18 @@ def _content(message: IncomingMessage) -> list[ContentBlockParam] | None:
         ]
 
     if message.text.strip():
-        return [{"type": "text", "text": _TEXT_PROMPT + message.text}]
+        return [
+            {"type": "text", "text": text_prompt + "\n\nThe message:\n" + message.text}
+        ]
 
     return None
 
 
 async def parse_tip(
-    message: IncomingMessage, claude: AsyncAnthropic, stake: float
+    message: IncomingMessage,
+    claude: AsyncAnthropic,
+    stake: float,
+    text_prompt: str,
 ) -> Tip | None:
     """Extract a tip from a message's screenshot, or None if there is not one.
 
@@ -135,11 +147,12 @@ async def parse_tip(
         message: The archived message: its screenshot if it has one, else its text.
         claude: Client used for the extraction.
         stake: What to stake, since the tip does not decide that.
+        text_prompt: The prompt for a text tip, from :func:`build_text_prompt`.
 
     Returns:
         The tip the message describes, or None for anything that is not one.
     """
-    content = _content(message)
+    content = _content(message, text_prompt)
 
     if content is None:
         return None

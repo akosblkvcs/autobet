@@ -16,6 +16,7 @@ dependencies = [
   "websockets>=17.1",
   "httpx2>=2.12",
   "humanize>=4.16.0",
+  "rapidfuzz>=3.14.6",
 ]
 
 [dependency-groups]

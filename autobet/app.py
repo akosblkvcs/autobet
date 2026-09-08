@@ -9,7 +9,7 @@ import uvicorn
 
 from autobet.bookmaker import Bookmaker
 from autobet.config import Settings
-from autobet.parser import build_claude, parse_tip
+from autobet.parser import build_claude, build_text_prompt, parse_tip
 from autobet.pipeline import PipelineState, run_pipeline
 from autobet.storage import MessageStore
 from autobet.telegram import TelegramSource
@@ -33,7 +33,12 @@ async def run_service(settings: Settings) -> None:
     source = TelegramSource(settings)
     bookmaker = Bookmaker(settings)
     claude = build_claude(settings)
-    parse = partial(parse_tip, claude=claude, stake=settings.stake)
+    parse = partial(
+        parse_tip,
+        claude=claude,
+        stake=settings.stake,
+        text_prompt=build_text_prompt(),
+    )
 
     await source.start()
     await bookmaker.start()

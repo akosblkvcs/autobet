@@ -1,4 +1,4 @@
-.PHONY: install fmt lint types check run dev login chats migrate psql db-reset db-wipe
+.PHONY: install fmt lint types check run dev login chats migrate markets psql db-reset db-wipe
 
 install:
 	uv sync
@@ -30,6 +30,9 @@ chats:
 
 migrate:
 	uv run python -m autobet migrate
+
+markets:
+	uv run python -m autobet markets
 
 psql:
 	docker compose exec postgres psql -U postgres -d autobet

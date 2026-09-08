@@ -70,6 +70,11 @@ class LegOffer:
 
         return (self.starts_at - utcnow()).total_seconds() / 86400
 
+    @property
+    def started(self) -> bool:
+        """Whether kick-off has passed, which makes every market an in-play one."""
+        return self.starts_at is not None and self.starts_at < utcnow()
+
 
 @dataclass(frozen=True, slots=True)
 class Tip:

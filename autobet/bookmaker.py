@@ -111,6 +111,11 @@ class Bookmaker:
         if len(placeable) != len(offers):
             return f"{len(offers) - len(placeable)} of {len(offers)} legs not in the feed"
 
+        started = [offer for offer in placeable if offer.started]
+
+        if started:
+            return f"{started[0].event_name} has already started"
+
         if tip.message.chat_id in self._forced:
             log.info("checks_forced", chat=tip.message.chat_id)
 

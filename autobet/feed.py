@@ -5,12 +5,13 @@ import json
 import re
 import unicodedata
 from collections.abc import Sequence
-from datetime import UTC, datetime
-from difflib import SequenceMatcher
+from dataclasses import dataclass
+from datetime import UTC, datetime, timedelta
 from typing import Any, cast
 from zoneinfo import ZoneInfo
 
 import structlog
+from rapidfuzz import fuzz
 from websockets.asyncio.client import ClientConnection, connect
 
 from autobet.config import Settings
@@ -28,22 +29,17 @@ _WAMP_RESULT = 50
 _WAMP_ERROR = 8
 
 _DISCIPLINES_TOPIC = "disciplines/NOT_LIVE/NOT_VIRTUAL/NOT_SIMULATED"
-_INDEX_REFRESH_SECONDS = 6 * 60 * 60
+_INDEX_REFRESH_SECONDS = 4 * 60 * 60
 _INDEX_WAIT_SECONDS = 150
-_MIN_EVENT_SCORE = 0.85
-_MIN_EVENT_GAP = 0.05
+_MIN_SCORE = 0.85
+_MIN_GAP = 0.05
+_LANGUAGES = ("hu", "en")
 
 _FIXTURE_SIDES = re.compile(r" - | vs\.? ")
 _DECIMAL_LINE = re.compile(r"(\d+)[.,](\d+)")
-_SELECTION_KEYS = {
-    "igen": "yes",
-    "nem": "no",
-    "yes": "yes",
-    "no": "no",
-    "döntetlen": "draw",
-    "draw": "draw",
-    "x": "draw",
-}
+_SELECTION_PARTS = re.compile(r"\s*(?:/|,|\bvagy\b|\bor\b)\s*")
+_SHORTHAND = re.compile(r"[1x2]+")
+_NUMERIC = re.compile(r"-?\d+\.?\d*")
 _TRANSLITERATED = str.maketrans({"j": "i", "y": "i", "w": "v", "k": "c"})
 
 
@@ -55,6 +51,33 @@ def _fold(text: str) -> str:
     return plain.casefold().translate(_TRANSLITERATED).strip()
 
 
+def _folded(*words: str) -> tuple[str, ...]:
+    """Fold a vocabulary at import, so lookups compare like with like."""
+    return tuple(_fold(word) for word in words)
+
+
+_SELECTION_KEYS = dict(
+    zip(
+        _folded("Igen", "Nem", "Yes", "No", "Döntetlen", "Draw", "X"),
+        ("yes", "no", "yes", "no", "draw", "draw", "draw"),
+        strict=True,
+    )
+)
+_DRAW_WORDS = _folded("Döntetlen", "Draw", "X")
+_OVER_WORDS = _folded("Több", "Over")
+_UNDER_WORDS = _folded("Kevesebb", "Under")
+_SIDE_WORDS = {"1": "home", "x": "draw", "2": "away"}
+_SIDE_CODES = {"home": "#HOME", "away": "#AWAY", "draw": "#D"}
+_SIDE_KEYS = {
+    frozenset({"home"}): "home",
+    frozenset({"away"}): "away",
+    frozenset({"draw"}): "draw",
+    frozenset({"home", "draw"}): "home_draw",
+    frozenset({"away", "draw"}): "away_draw",
+    frozenset({"home", "away"}): "home_away",
+}
+
+
 def _normalise(name: str) -> str:
     """Reduce a market name to what the slip and the feed agree on."""
     name = name.replace("–", "-").replace("—", "-")
@@ -64,9 +87,41 @@ def _normalise(name: str) -> str:
     ).casefold()
 
 
-def _initials(name: str) -> str:
-    """Abbreviation hit helper."""
-    return "".join(word[0] for word in _fold(name).split() if word)
+def _shape(name: str) -> tuple[int, frozenset[float]]:
+    """What a market bets on: how many things at once, and at which lines."""
+    normalised = _normalise(name)
+    lines = frozenset(
+        float(word) for word in normalised.split() if _NUMERIC.fullmatch(word)
+    )
+
+    return normalised.count("+"), lines
+
+
+def _market_score(wanted: str, candidate: str) -> float:
+    """How well a tipster's market name matches one the feed lists."""
+    if _shape(wanted) != _shape(candidate):
+        return 0.0
+
+    return fuzz.token_sort_ratio(_normalise(wanted), _normalise(candidate)) / 100
+
+
+def _best(scored: list[tuple[float, Any]]) -> Any | None:
+    """The clear winner among scored candidates, or None if there is not one."""
+    if not scored:
+        return None
+
+    ranked = sorted(scored, key=lambda pair: pair[0], reverse=True)
+    best, runner = ranked[0][0], ranked[1][0] if len(ranked) > 1 else 0.0
+
+    if best < _MIN_SCORE or best - runner < _MIN_GAP:
+        return None
+
+    return ranked[0][1]
+
+
+def _initials(folded: str) -> str:
+    """Abbreviation hit helper, so `ANM` reaches `Atl. Nacional Medellin`."""
+    return "".join(word[0] for word in folded.split() if word)
 
 
 def _two_sides(name: str) -> tuple[str, str] | None:
@@ -76,20 +131,17 @@ def _two_sides(name: str) -> tuple[str, str] | None:
     return (parts[0], parts[1]) if len(parts) == 2 else None  # noqa: PLR2004
 
 
-def _score(query: str, candidate: str) -> float:
-    """How well one side of a fixture matches one side of an event name."""
-    left, right = _fold(query), _fold(candidate)
+def _score(query: str, aliases: Sequence[str]) -> float:
+    """How well one competitor matches any name the feed has for that side."""
+    folded = _fold(query)
 
-    if left == right:
-        return 1.0
-    if left == _initials(candidate):
-        return 0.95
-    if right.startswith(left) or left.startswith(right):
-        return 0.9
-    if left in right or right in left:
-        return 0.85
-
-    return SequenceMatcher(None, left, right).ratio()
+    return max(
+        (
+            0.95 if folded == _initials(alias) else fuzz.WRatio(folded, alias) / 100
+            for alias in aliases
+        ),
+        default=0.0,
+    )
 
 
 def _starts_at(event: dict[str, Any]) -> datetime | None:
@@ -110,6 +162,56 @@ def _describe(parts: list[Any]) -> str:
     return str(parts)
 
 
+@dataclass(frozen=True, slots=True)
+class IndexedEvent:
+    """One fixture in the index, with every name the feed gives its two sides."""
+
+    id: str
+    name: str
+    sport: str
+    home_id: str
+    away_id: str
+    home: tuple[str, ...]
+    away: tuple[str, ...]
+    starts_at: datetime | None
+
+    def side_of(self, competitor: str) -> str | None:
+        """Which side a name picks out, or None when it fits both or neither."""
+        home, away = _score(competitor, self.home), _score(competitor, self.away)
+
+        if max(home, away) < _MIN_SCORE or abs(home - away) < _MIN_GAP:
+            return None
+
+        return "home" if home > away else "away"
+
+
+def _aliases(records: Sequence[dict[str, Any]], side: str) -> tuple[str, ...]:
+    """Every name the feed gave one side of a fixture, folded and deduplicated."""
+    names = {
+        _fold(str(record.get(key) or ""))
+        for record in records
+        for key in (f"{side}ParticipantName", f"{side}ShortParticipantName")
+    }
+
+    return tuple(sorted(name for name in names if name))
+
+
+def _indexed(records: Sequence[dict[str, Any]]) -> IndexedEvent:
+    """Fold one fixture's per-language records into a single index entry."""
+    first = records[0]
+
+    return IndexedEvent(
+        id=str(first["id"]),
+        name=str(first.get("name") or ""),
+        sport=str(first.get("sportName") or ""),
+        home_id=str(first.get("homeParticipantId") or ""),
+        away_id=str(first.get("awayParticipantId") or ""),
+        home=_aliases(records, "home"),
+        away=_aliases(records, "away"),
+        starts_at=_starts_at(first),
+    )
+
+
 class NotLoggedInError(RuntimeError):
     """The feed would not attach an account to the socket, so no bet can be placed."""
 
@@ -122,7 +224,7 @@ class Feed:
         self._settings = settings
         self._socket: ClientConnection | None = None
         self._request = 0
-        self._events: list[dict[str, Any]] = []
+        self._events: list[IndexedEvent] = []
         self._refresh: asyncio.Task[None] | None = None
         self._reader: asyncio.Task[None] | None = None
         self._waiting: dict[int, asyncio.Future[dict[str, Any]]] = {}
@@ -201,6 +303,15 @@ class Feed:
         return len(self._events)
 
     @property
+    def indexed_events(self) -> list[IndexedEvent]:
+        """The index itself, for tools that walk it rather than search it."""
+        return self._events
+
+    async def indexed(self) -> None:
+        """Wait for the first index to finish."""
+        await self._indexed.wait()
+
+    @property
     def indexed_at(self) -> datetime | None:
         """When the index last finished, or None if it never has."""
         return self._indexed_at
@@ -257,54 +368,98 @@ class Feed:
                 if waiting is not None and not waiting.done():
                     waiting.set_result({_FAILED: _describe(message[4:])})
 
-    def _asleep(self) -> bool:
-        """Whether we are inside the hours the tipster does not post."""
+    def _now(self) -> datetime:
+        """The current time where the tipster's hours are defined."""
+        return datetime.now(ZoneInfo(self._settings.quiet_timezone))
+
+    def _quiet(self, moment: datetime) -> bool:
+        """Whether a moment falls in the hours the tipster does not post."""
         start = self._settings.quiet_from_hour
         end = self._settings.quiet_until_hour
 
         if start == end:
             return False
 
-        hour = datetime.now(ZoneInfo(self._settings.quiet_timezone)).hour
+        hour = moment.hour
 
         return start <= hour < end if start < end else hour >= start or hour < end
 
+    def _asleep(self) -> bool:
+        """Whether we are inside the hours the tipster does not post."""
+        return self._quiet(self._now())
+
+    def _wakes(self, moment: datetime) -> datetime:
+        """When the quiet window at or after `moment` ends."""
+        wake = moment.replace(
+            hour=self._settings.quiet_until_hour, minute=0, second=0, microsecond=0
+        )
+
+        return wake if wake > moment else wake + timedelta(days=1)
+
+    def _until_next(self) -> float:
+        """Seconds to wait before indexing again."""
+        now = self._now()
+
+        if self._quiet(now) or self._quiet(
+            now + timedelta(seconds=_INDEX_REFRESH_SECONDS)
+        ):
+            return (self._wakes(now) - now).total_seconds()
+
+        return _INDEX_REFRESH_SECONDS
+
     async def _keep_fresh(self) -> None:
-        """Index now, then rebuild forever, so a tip never waits for one."""
+        """Index on waking, then every few hours until the quiet window returns."""
         while True:
-            if self._asleep() and self._indexed.is_set():
-                log.info("index_asleep")
-            else:
+            if not self._asleep() or not self._indexed.is_set():
                 await self._reindex()
 
-            await asyncio.sleep(_INDEX_REFRESH_SECONDS)
+            due = self._until_next()
+
+            log.info("index_due", hours=round(due / 3600, 1))
+
+            await asyncio.sleep(due)
+
+    async def _matches(self, tournament: str) -> list[list[dict[str, Any]]]:
+        """One fixture's records per language, asked for at the same time."""
+        operator = self._settings.book_operator
+        answers = await asyncio.gather(
+            *(
+                self._call(f"/sports/{operator}/{language}/matches/{tournament}")
+                for language in _LANGUAGES
+            )
+        )
+        found: dict[str, list[dict[str, Any]]] = {}
+        for records in answers:
+            for record in records:
+                if record["_type"] == "MATCH":
+                    found.setdefault(str(record["id"]), []).append(record)
+
+        return list(found.values())
 
     async def _reindex(self) -> None:
         """Walk every tournament of every watched sport and note its events."""
         async with self._lock:
+            operator = self._settings.book_operator
             sports = [
                 record["id"]
                 for record in await self._call(
-                    f"/sports/{self._settings.book_operator}/hu/{_DISCIPLINES_TOPIC}"
+                    f"/sports/{operator}/hu/{_DISCIPLINES_TOPIC}"
                 )
                 if record["_type"] == "SPORT"
             ]
-            events: list[dict[str, Any]] = []
+            events: list[IndexedEvent] = []
             for sport in sports:
                 tournaments = [
                     record
                     for record in await self._call(
-                        f"/sports/{self._settings.book_operator}/hu/tournaments/{sport}"
+                        f"/sports/{operator}/hu/tournaments/{sport}"
                     )
                     if record["_type"] == "TOURNAMENT" and record.get("numberOfEvents")
                 ]
                 for tournament in tournaments:
                     events += [
-                        record
-                        for record in await self._call(
-                            f"/sports/{self._settings.book_operator}/hu/matches/{tournament['id']}"
-                        )
-                        if record["_type"] == "MATCH"
+                        _indexed(records)
+                        for records in await self._matches(str(tournament["id"]))
                     ]
 
             self._events = events
@@ -312,35 +467,23 @@ class Feed:
             self._indexed.set()
             log.info("feed_indexed", events=len(events), sports=len(sports))
 
-    def find_event(self, event: str) -> dict[str, Any] | None:
+    def find_event(self, fixture: str) -> IndexedEvent | None:
         """Which indexed event a tip's event line names, or None if unclear."""
-        sides = _two_sides(event)
+        sides = _two_sides(fixture)
         if sides is None:
             return None
 
-        ranked: list[tuple[float, dict[str, Any]]] = []
-        for candidate in self._events:
-            against = _two_sides(str(candidate.get("name") or ""))
-            if against is None:
-                continue
-            ranked.append(
-                (
-                    (_score(sides[0], against[0]) + _score(sides[1], against[1])) / 2,
-                    candidate,
-                )
-            )
+        found: IndexedEvent | None = _best(
+            [
+                ((_score(sides[0], event.home) + _score(sides[1], event.away)) / 2, event)
+                for event in self._events
+            ]
+        )
 
-        if not ranked:
-            return None
+        if found is None:
+            log.info("event_unclear", fixture=fixture, indexed=len(self._events))
 
-        ranked.sort(key=lambda pair: pair[0], reverse=True)
-        best = ranked[0]
-        runner = ranked[1][0] if len(ranked) > 1 else 0.0
-
-        if best[0] < _MIN_EVENT_SCORE or best[0] - runner < _MIN_EVENT_GAP:
-            return None
-
-        return best[1]
+        return found
 
     async def _ready(self) -> None:
         """Wait for the first index, since an empty one resolves nothing."""
@@ -360,18 +503,22 @@ class Feed:
 
         return [await self._resolve_leg(leg) for leg in tip.legs]
 
+    async def market_records(self, event: IndexedEvent) -> list[dict[str, Any]]:
+        """Every market, outcome and price the feed lists for one event."""
+        return await self._call(
+            f"/sports/{self._settings.book_operator}/hu/{event.id}/match-odds"
+        )
+
     async def _resolve_leg(self, leg: TipLeg) -> LegOffer | None:
         """Find the one betting offer a leg names, or None if anything is unclear."""
         event = self.find_event(leg.event)
         if event is None:
             return None
 
-        records = await self._call(
-            f"/sports/{self._settings.book_operator}/hu/{event['id']}/match-odds"
-        )
+        records = await self.market_records(event)
 
         if not records:
-            log.info("event_has_no_odds", fixture=event.get("name"))
+            log.info("event_has_no_odds", fixture=event.name)
 
             return None
 
@@ -379,25 +526,26 @@ class Feed:
         for record in records:
             grouped.setdefault(record["_type"], []).append(record)
 
-        wanted = _normalise(leg.market)
-        markets = [
-            m for m in grouped.get("MARKET", []) if _normalise(m["name"]) == wanted
-        ]
-        if not markets:
+        market: dict[str, Any] | None = _best(
+            [
+                (_market_score(leg.market, str(m["name"])), m)
+                for m in grouped.get("MARKET", [])
+            ]
+        )
+        if market is None:
+            log.info("market_unmatched", fixture=event.name, market=leg.market)
+
             return None
 
         market_of = {
             relation["outcomeId"]: relation["marketId"]
             for relation in grouped.get("MARKET_OUTCOME_RELATION", [])
         }
-        sides = {
-            event.get("homeParticipantId"): "#HOME",
-            event.get("awayParticipantId"): "#AWAY",
-        }
+        sides = {event.home_id: "#HOME", event.away_id: "#AWAY"}
         key, code = _selection(leg, event)
 
         for outcome in grouped.get("OUTCOME", []):
-            if market_of.get(outcome["id"]) != markets[0]["id"]:
+            if market_of.get(outcome["id"]) != market["id"]:
                 continue
 
             marked = outcome.get("code") or ""
@@ -417,45 +565,59 @@ class Feed:
                 if offer is not None:
                     return LegOffer(
                         leg=leg,
-                        event_id=str(event["id"]),
-                        event_name=str(event.get("name")),
-                        market_id=str(markets[0]["id"]),
+                        event_id=event.id,
+                        event_name=event.name,
+                        market_id=str(market["id"]),
                         outcome_id=str(outcome["id"]),
-                        betting_type_id=str(markets[0].get("bettingTypeId")),
+                        betting_type_id=str(market.get("bettingTypeId")),
                         offer_id=str(offer["id"]),
                         odds=float(offer["odds"]),
-                        starts_at=_starts_at(event),
+                        starts_at=event.starts_at,
                     )
+
+        log.info("outcome_unmatched", fixture=event.name, selection=leg.selection)
 
         return None
 
 
-def _selection(leg: TipLeg, event: dict[str, Any]) -> tuple[str | None, str | None]:
+def _parts(selection: str) -> list[str]:
+    """The outcomes a selection names, one per part."""
+    folded = _fold(selection)
+
+    if _SHORTHAND.fullmatch(folded):
+        return list(folded)
+
+    return [part for part in _SELECTION_PARTS.split(selection) if part.strip()]
+
+
+def _piece(text: str, event: IndexedEvent) -> str | None:
+    """Which side of the fixture one part of a selection names."""
+    folded = _fold(text)
+
+    if folded in _DRAW_WORDS:
+        return "draw"
+
+    return _SIDE_WORDS.get(folded) or event.side_of(text)
+
+
+def _over_under(folded: str) -> str | None:
+    """Whether a totals selection backs the over or the under."""
+    if folded.startswith(_OVER_WORDS):
+        return "over"
+    if folded.startswith(_UNDER_WORDS):
+        return "under"
+
+    return None
+
+
+def _selection(leg: TipLeg, event: IndexedEvent) -> tuple[str | None, str | None]:
     """What the leg backs, as a header key and as an outcome code."""
     folded = _fold(leg.selection)
-    sides = _two_sides(str(event.get("name") or ""))
-    home, away = (_fold(sides[0]), _fold(sides[1])) if sides else ("", "")
+    pieces = [_piece(part, event) for part in _parts(leg.selection)]
+    named = [piece for piece in pieces if piece is not None]
+    whole = frozenset(named) if len(named) == len(pieces) else frozenset()
 
-    key: str | None = _SELECTION_KEYS.get(folded)
-    if key is None and folded.startswith(("több, mint", "over")):
-        key = "over"
-    if key is None and folded.startswith(("kevesebb, mint", "under")):
-        key = "under"
-    if key is None and folded and folded == home:
-        key = "home"
-    if key is None and folded and folded == away:
-        key = "away"
+    key = _SELECTION_KEYS.get(folded) or _over_under(folded) or _SIDE_KEYS.get(whole)
+    code = " / ".join(_SIDE_CODES[piece] for piece in named) if whole else None
 
-    parts: list[str] = []
-    for piece in re.split(r"\s*/\s*", leg.selection):
-        chunk = _fold(piece)
-        if chunk in ("döntetlen", "draw", "x"):
-            parts.append("#D")
-        elif chunk and chunk == home:
-            parts.append("#HOME")
-        elif chunk and chunk == away:
-            parts.append("#AWAY")
-        else:
-            return key, None
-
-    return key, " / ".join(parts)
+    return key, code
