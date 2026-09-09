@@ -1,13 +1,20 @@
 # OS / IDE
-.vscode/
+!.vscode/
+.vscode/*
+!.vscode/settings.json
+!.vscode/extensions.json
+!.vscode/launch.json
+!.vscode/tasks.json
 .DS_Store
 
 # Environment
+!.envrc
 .env
 .env.*
 !.env.example
 
 # Python
+!.python-version
 .venv/
 __pycache__/
 .ruff_cache/
