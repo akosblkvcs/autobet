@@ -103,9 +103,9 @@ def build_claude(settings: Settings) -> AsyncAnthropic:
     return AsyncAnthropic(api_key=settings.claude_api_key)
 
 
-def build_text_prompt() -> str:
+def build_text_prompt(settings: Settings) -> str:
     """The text prompt, with the bookmaker's own bet types appended to it."""
-    return _TEXT_PROMPT + markets.as_prompt(markets.load())
+    return _TEXT_PROMPT + markets.as_prompt(markets.load(settings.market_families))
 
 
 def _content(

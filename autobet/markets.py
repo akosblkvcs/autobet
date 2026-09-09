@@ -20,8 +20,6 @@ from autobet.feed import Feed, IndexedEvent, two_sides
 
 log = structlog.get_logger(__name__)
 
-FAMILIES = Path("data/markets.json")
-
 _LINE = re.compile(r"-?\d+[.,]?\d*")
 _PER_SPORT = 3
 
@@ -80,20 +78,22 @@ async def harvest(feed: Feed, events: list[IndexedEvent]) -> dict[str, list[str]
     return vocabulary
 
 
-def load() -> dict[str, list[str]]:
+def load(path: Path) -> dict[str, list[str]]:
     """The harvested vocabulary, or nothing if it has never been harvested."""
-    if not FAMILIES.exists():
+    if not path.exists():
+        log.warning("markets_unharvested", path=str(path))
+
         return {}
 
-    vocabulary: dict[str, list[str]] = json.loads(FAMILIES.read_text())
+    vocabulary: dict[str, list[str]] = json.loads(path.read_text())
 
     return vocabulary
 
 
-def save(vocabulary: dict[str, list[str]]) -> None:
+def save(vocabulary: dict[str, list[str]], path: Path) -> None:
     """Write the vocabulary where :func:`load` will find it."""
-    FAMILIES.parent.mkdir(parents=True, exist_ok=True)
-    FAMILIES.write_text(json.dumps(vocabulary, ensure_ascii=False, indent=1))
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(vocabulary, ensure_ascii=False, indent=1))
 
 
 def as_prompt(vocabulary: dict[str, list[str]]) -> str:

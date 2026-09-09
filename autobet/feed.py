@@ -29,6 +29,7 @@ _WAMP_RESULT = 50
 _WAMP_ERROR = 8
 
 _DISCIPLINES_TOPIC = "disciplines/NOT_LIVE/NOT_VIRTUAL/NOT_SIMULATED"
+_STAGES_TOPIC = "tournament-odds/7/1"
 _INDEX_REFRESH_SECONDS = 4 * 60 * 60
 _INDEX_WAIT_SECONDS = 150
 _MIN_SCORE = 0.85
@@ -105,18 +106,25 @@ def _market_score(wanted: str, candidate: str) -> float:
     return fuzz.token_sort_ratio(_normalise(wanted), _normalise(candidate)) / 100
 
 
-def _best(scored: list[tuple[float, Any]]) -> Any | None:
-    """The clear winner among scored candidates, or None if there is not one."""
+def _top(scored: list[tuple[float, Any]]) -> list[Any]:
+    """Every candidate the score cannot separate from the best, or none at all."""
     if not scored:
-        return None
+        return []
 
     ranked = sorted(scored, key=lambda pair: pair[0], reverse=True)
-    best, runner = ranked[0][0], ranked[1][0] if len(ranked) > 1 else 0.0
+    best = ranked[0][0]
 
-    if best < _MIN_SCORE or best - runner < _MIN_GAP:
-        return None
+    if best < _MIN_SCORE:
+        return []
 
-    return ranked[0][1]
+    return [candidate for score, candidate in ranked if best - score < _MIN_GAP]
+
+
+def _best(scored: list[tuple[float, Any]]) -> Any | None:
+    """The one clear winner among scored candidates, or None if there is not one."""
+    top = _top(scored)
+
+    return top[0] if len(top) == 1 else None
 
 
 def _initials(folded: str) -> str:
@@ -436,6 +444,30 @@ class Feed:
 
         return list(found.values())
 
+    async def _stages(self, tournament: str) -> list[str]:
+        """The child tournaments a competition splits its fixtures across."""
+        records = await self._call(
+            f"/sports/{self._settings.book_operator}/hu/{tournament}/{_STAGES_TOPIC}"
+        )
+
+        return [
+            str(record["id"])
+            for record in records
+            if record["_type"] == "TOURNAMENT" and record.get("parentId") == tournament
+        ]
+
+    async def _fixtures(self, tournament: str) -> list[list[dict[str, Any]]]:
+        """One tournament's fixtures, reaching into its stages when it has any."""
+        found = await self._matches(tournament)
+
+        if found:
+            return found
+
+        for stage in await self._stages(tournament):
+            found += await self._matches(stage)
+
+        return found
+
     async def _reindex(self) -> None:
         """Walk every tournament of every watched sport and note its events."""
         async with self._lock:
@@ -459,7 +491,7 @@ class Feed:
                 for tournament in tournaments:
                     events += [
                         _indexed(records)
-                        for records in await self._matches(str(tournament["id"]))
+                        for records in await self._fixtures(str(tournament["id"]))
                     ]
 
             self._events = events
@@ -526,13 +558,16 @@ class Feed:
         for record in records:
             grouped.setdefault(record["_type"], []).append(record)
 
-        market: dict[str, Any] | None = _best(
-            [
-                (_market_score(leg.market, str(m["name"])), m)
-                for m in grouped.get("MARKET", [])
-            ]
-        )
-        if market is None:
+        named = {
+            market["id"]: market
+            for market in _top(
+                [
+                    (_market_score(leg.market, str(m["name"])), m)
+                    for m in grouped.get("MARKET", [])
+                ]
+            )
+        }
+        if not named:
             log.info("market_unmatched", fixture=event.name, market=leg.market)
 
             return None
@@ -541,41 +576,39 @@ class Feed:
             relation["outcomeId"]: relation["marketId"]
             for relation in grouped.get("MARKET_OUTCOME_RELATION", [])
         }
+        prices = {offer["outcomeId"]: offer for offer in grouped.get("BETTING_OFFER", [])}
+        wanted = _selection(leg, event)
         sides = {event.home_id: "#HOME", event.away_id: "#AWAY"}
-        key, code = _selection(leg, event)
+        found = [
+            (named[market_of[outcome["id"]]], outcome)
+            for outcome in grouped.get("OUTCOME", [])
+            if market_of.get(outcome["id"]) in named
+            and outcome["id"] in prices
+            and _backs(outcome, leg, wanted, sides)
+        ]
 
-        for outcome in grouped.get("OUTCOME", []):
-            if market_of.get(outcome["id"]) != market["id"]:
-                continue
+        if len(found) == 1:
+            market, outcome = found[0]
+            offer = prices[outcome["id"]]
 
-            marked = outcome.get("code") or ""
-            for participant, side in sides.items():
-                if participant:
-                    marked = marked.replace(f"#P{participant}", side)
+            return LegOffer(
+                leg=leg,
+                event_id=event.id,
+                event_name=event.name,
+                market_id=str(market["id"]),
+                outcome_id=str(outcome["id"]),
+                betting_type_id=str(market.get("bettingTypeId")),
+                offer_id=str(offer["id"]),
+                odds=float(offer["odds"]),
+                starts_at=event.starts_at,
+            )
 
-            if outcome.get("headerNameKey") == key or (code and marked == code):
-                offer = next(
-                    (
-                        o
-                        for o in grouped.get("BETTING_OFFER", [])
-                        if o.get("outcomeId") == outcome["id"]
-                    ),
-                    None,
-                )
-                if offer is not None:
-                    return LegOffer(
-                        leg=leg,
-                        event_id=event.id,
-                        event_name=event.name,
-                        market_id=str(market["id"]),
-                        outcome_id=str(outcome["id"]),
-                        betting_type_id=str(market.get("bettingTypeId")),
-                        offer_id=str(offer["id"]),
-                        odds=float(offer["odds"]),
-                        starts_at=event.starts_at,
-                    )
-
-        log.info("outcome_unmatched", fixture=event.name, selection=leg.selection)
+        log.info(
+            "outcome_unmatched",
+            fixture=event.name,
+            selection=leg.selection,
+            matched=len(found),
+        )
 
         return None
 
@@ -608,6 +641,31 @@ def _over_under(folded: str) -> str | None:
         return "under"
 
     return None
+
+
+def _backs(
+    outcome: dict[str, Any],
+    leg: TipLeg,
+    wanted: tuple[str | None, str | None],
+    sides: dict[str, str],
+) -> bool:
+    """Whether one outcome is the bet a leg names."""
+    key, code = wanted
+
+    if key is not None and outcome.get("headerNameKey") == key:
+        return True
+
+    marked = outcome.get("code") or ""
+    for participant, side in sides.items():
+        if participant:
+            marked = marked.replace(f"#P{participant}", side)
+
+    if code and marked == code:
+        return True
+
+    shown = _fold(_normalise(str(outcome.get("translatedName") or "")))
+
+    return bool(shown) and shown == _fold(_normalise(leg.selection))
 
 
 def _selection(leg: TipLeg, event: IndexedEvent) -> tuple[str | None, str | None]:

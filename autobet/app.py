@@ -37,7 +37,7 @@ async def run_service(settings: Settings) -> None:
         parse_tip,
         claude=claude,
         stake=settings.stake,
-        text_prompt=build_text_prompt(),
+        text_prompt=build_text_prompt(settings),
     )
 
     await source.start()

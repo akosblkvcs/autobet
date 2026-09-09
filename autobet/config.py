@@ -25,11 +25,10 @@ class Settings(BaseSettings):
 
     environment: Literal["development", "production"] = "development"
     log_level: LogLevel = "INFO"
+    data_dir: Path = Path("data")
 
     telegram_api_id: int = 0
     telegram_api_hash: str = ""
-    telegram_session: Path = Path("data/telethon.session")
-    telegram_media_dir: Path = Path("data/media")
     telegram_source_chat_ids: ChatIds = ()
     telegram_force_chat_ids: ChatIds = ()
 
@@ -58,6 +57,21 @@ class Settings(BaseSettings):
     stake: int = Field(default=100, ge=100)
     max_odds_drop_percent: float = Field(default=10.0, gt=0)
     max_event_days_ahead: int = Field(default=7, gt=0)
+
+    @property
+    def telegram_session(self) -> Path:
+        """Telethon's SQLite session."""
+        return self.data_dir / "telethon.session"
+
+    @property
+    def telegram_media_dir(self) -> Path:
+        """Where screenshots land, one file per message."""
+        return self.data_dir / "media"
+
+    @property
+    def market_families(self) -> Path:
+        """The bet types `make markets` harvests from the book."""
+        return self.data_dir / "markets.json"
 
 
 def load_settings() -> Settings:

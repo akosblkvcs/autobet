@@ -70,11 +70,11 @@ async def cmd_markets(settings: Settings) -> None:
     await feed.indexed()
 
     vocabulary = await markets.harvest(feed, feed.indexed_events)
-    markets.save(vocabulary)
+    markets.save(vocabulary, settings.market_families)
 
     print(
         f"{sum(len(names) for names in vocabulary.values())} bet types "
-        f"across {len(vocabulary)} sports -> {markets.FAMILIES}"
+        f"across {len(vocabulary)} sports -> {settings.market_families}"
     )
 
     await feed.stop()
