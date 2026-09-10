@@ -54,7 +54,7 @@
             {{ "%+.1f" % -offer.drop_percent }}%
           </span>
         </div>
-        {% elif row.offers %}
+        {% elif not row.failed %}
         <div class="offer unresolved">no match in the feed</div>
         {% endif %}
       </div>

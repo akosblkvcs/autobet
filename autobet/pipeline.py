@@ -7,7 +7,7 @@ from datetime import datetime
 import structlog
 
 from autobet.bookmaker import Bookmaker
-from autobet.models import BetResult, IncomingMessage, Tip, utcnow
+from autobet.models import FAILED, BetResult, IncomingMessage, Tip, utcnow
 from autobet.storage import Store
 
 log = structlog.get_logger(__name__)
@@ -107,6 +107,6 @@ async def run_pipeline(
                         tip=tip,
                         reference="",
                         placed_at=utcnow(),
-                        refusal=f"failed: {type(error).__name__}",
+                        refusal=f"{FAILED}{type(error).__name__}",
                     ),
                 )

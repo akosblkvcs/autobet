@@ -178,6 +178,16 @@ async def parse_tip(
 
         return None
 
+    if any(leg.odds <= 0 for leg in slip.legs):
+        log.info(
+            "no_odds",
+            external_id=message.external_id,
+            legs=len(slip.legs),
+            vision_ms=vision_ms,
+        )
+
+        return None
+
     legs = tuple(
         TipLeg(event=leg.event, market=leg.market, selection=leg.selection, odds=leg.odds)
         for leg in slip.legs

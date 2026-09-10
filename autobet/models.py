@@ -4,6 +4,8 @@ import math
 from dataclasses import dataclass
 from datetime import UTC, datetime
 
+FAILED = "failed: "
+
 
 def utcnow() -> datetime:
     """Return the current time as a timezone-aware UTC datetime."""
@@ -101,6 +103,11 @@ class MessageWithTip:
         offers = self.offers or (None,) * len(self.legs)
 
         return list(zip(self.legs, offers, strict=True))
+
+    @property
+    def failed(self) -> bool:
+        """Whether the tip blew up before it was judged, so no leg was looked up."""
+        return self.refusal.startswith(FAILED)
 
     @property
     def odds(self) -> float:
