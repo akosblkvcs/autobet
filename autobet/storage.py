@@ -38,7 +38,7 @@ def _to_leg(row: Record) -> TipLeg:
         event=row["event"],
         market=row["market"],
         selection=row["selection"],
-        odds=float(row["odds"]),
+        odds=None if row["odds"] is None else float(row["odds"]),
     )
 
 

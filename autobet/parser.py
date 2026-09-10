@@ -1,7 +1,6 @@
 """Turn a message into a tip by reading its betslip screenshot."""
 
 import base64
-import math
 from pathlib import Path
 from typing import Literal
 
@@ -12,7 +11,7 @@ from pydantic import BaseModel
 
 from autobet import markets
 from autobet.config import Settings
-from autobet.models import IncomingMessage, Tip, TipLeg, utcnow
+from autobet.models import IncomingMessage, Tip, TipLeg, combined, utcnow
 
 log = structlog.get_logger(__name__)
 
@@ -178,18 +177,13 @@ async def parse_tip(
 
         return None
 
-    if any(leg.odds <= 0 for leg in slip.legs):
-        log.info(
-            "no_odds",
-            external_id=message.external_id,
-            legs=len(slip.legs),
-            vision_ms=vision_ms,
-        )
-
-        return None
-
     legs = tuple(
-        TipLeg(event=leg.event, market=leg.market, selection=leg.selection, odds=leg.odds)
+        TipLeg(
+            event=leg.event,
+            market=leg.market,
+            selection=leg.selection,
+            odds=leg.odds if leg.odds > 0 else None,
+        )
         for leg in slip.legs
     )
 
@@ -197,12 +191,13 @@ async def parse_tip(
         "tip_extracted",
         external_id=message.external_id,
         legs=len(legs),
+        priced=sum(leg.odds is not None for leg in legs),
         vision_ms=vision_ms,
     )
 
     return Tip(
         legs=legs,
-        odds=math.prod(leg.odds for leg in legs),
+        odds=combined(legs),
         stake=stake,
         message=message,
     )

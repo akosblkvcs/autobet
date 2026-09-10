@@ -1,10 +1,21 @@
 """Domain models shared across the app."""
 
 import math
+from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime
 
 FAILED = "failed: "
+
+
+def combined(legs: Sequence[TipLeg]) -> float | None:
+    """Every leg multiplied together, or None unless the tipster priced them all."""
+    prices = [leg.odds for leg in legs]
+
+    if any(price is None for price in prices):
+        return None
+
+    return math.prod(price for price in prices if price is not None)
 
 
 def utcnow() -> datetime:
@@ -42,7 +53,8 @@ class TipLeg:
     event: str
     market: str
     selection: str
-    odds: float
+    odds: float | None
+    """What the tipster printed, or None when the message carried no price."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -60,8 +72,11 @@ class LegOffer:
     starts_at: datetime | None = None
 
     @property
-    def drop_percent(self) -> float:
-        """How far the live price has fallen below the one on the screenshot."""
+    def drop_percent(self) -> float | None:
+        """How far the live price has fallen below the tipster's, if they gave one."""
+        if self.leg.odds is None:
+            return None
+
         return (self.leg.odds - self.odds) / self.leg.odds * 100
 
     @property
@@ -83,7 +98,8 @@ class Tip:
     """A bet suggestion extracted from a message."""
 
     legs: tuple[TipLeg, ...]
-    odds: float
+    odds: float | None
+    """The tipster's combined price, or None unless they priced every leg."""
     stake: float
     message: IncomingMessage
 
@@ -110,9 +126,9 @@ class MessageWithTip:
         return self.refusal.startswith(FAILED)
 
     @property
-    def odds(self) -> float:
-        """What the whole slip pays: every leg multiplied together."""
-        return math.prod(leg.odds for leg in self.legs)
+    def odds(self) -> float | None:
+        """What the slip pays, or None unless the tipster priced every leg."""
+        return combined(self.legs)
 
 
 @dataclass(frozen=True, slots=True)

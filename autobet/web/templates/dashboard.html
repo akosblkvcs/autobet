@@ -44,15 +44,19 @@
     <td>
       {% for leg, offer in row.paired() %}
       <div class="leg">
-        <span class="odds">{{ leg.odds }}</span>
+        <span class="odds">{{ leg.odds if leg.odds else "—" }}</span>
         <div class="event">{{ leg.event }}</div>
         <div class="market">{{ leg.market }} &rarr; {{ leg.selection }}</div>
         {% if offer %}
         <div class="offer">
           matched {{ offer.event_name }} &middot; live {{ offer.odds }}
+          {% if offer.drop_percent is not none %}
           <span class="{{ 'drop' if offer.drop_percent > 0 else 'rise' }}">
             {{ "%+.1f" % -offer.drop_percent }}%
           </span>
+          {% else %}
+          <span class="quiet">no price given</span>
+          {% endif %}
         </div>
         {% elif not row.failed %}
         <div class="offer unresolved">no match in the feed</div>
@@ -60,7 +64,9 @@
       </div>
       {% endfor %}
       {% if row.legs | length > 1 %}
+      {% if row.odds %}
       <div class="quiet">accumulator, combined {{ "%.2f" % row.odds }}</div>
+      {% endif %}
       {% endif %}
       {% if row.refusal %}
       <div class="refused">refused &middot; {{ row.refusal }}</div>

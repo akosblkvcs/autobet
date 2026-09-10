@@ -55,7 +55,9 @@ class Bookmaker:
                 offer_id=offer.offer_id,
                 tipster_odds=leg.odds,
                 live_odds=offer.odds,
-                drop_percent=round(offer.drop_percent, 1),
+                drop_percent=(
+                    None if offer.drop_percent is None else round(offer.drop_percent, 1)
+                ),
             )
 
         result = BetResult(
@@ -71,7 +73,7 @@ class Bookmaker:
                 "bet_refused",
                 refusal=result.refusal,
                 legs=len(tip.legs),
-                tipster_odds=round(tip.odds, 3),
+                tipster_odds=None if tip.odds is None else round(tip.odds, 3),
             )
 
             return result
@@ -127,9 +129,12 @@ class Bookmaker:
             return f"event is {furthest:.1f} days away, limit {limit}"
 
         live = math.prod(offer.odds for offer in placeable)
-        drop = (tip.odds - live) / tip.odds * 100
 
-        if drop > self._max_drop_percent:
+        drop = None if tip.odds is None else (tip.odds - live) / tip.odds * 100
+
+        if drop is None:
+            log.info("odds_drop_unchecked", live=round(live, 3))
+        elif drop > self._max_drop_percent:
             return f"odds dropped {drop:.1f}%, limit {self._max_drop_percent:.0f}%"
 
         return ""
