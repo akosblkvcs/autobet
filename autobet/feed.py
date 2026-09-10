@@ -1,10 +1,11 @@
 """What a tip leg actually maps to at the bookmaker."""
 
 import asyncio
+import contextlib
 import json
 import re
 import unicodedata
-from collections.abc import Sequence
+from collections.abc import AsyncGenerator, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from typing import Any, cast
@@ -13,6 +14,7 @@ from zoneinfo import ZoneInfo
 import structlog
 from rapidfuzz import fuzz
 from websockets.asyncio.client import ClientConnection, connect
+from websockets.exceptions import ConnectionClosed
 
 from autobet.config import Settings
 from autobet.models import LegOffer, Tip, TipLeg
@@ -28,10 +30,12 @@ _WAMP_CALL = 48
 _WAMP_RESULT = 50
 _WAMP_ERROR = 8
 
+_PLACE_BET = "/sports#placeBetV2"
 _DISCIPLINES_TOPIC = "disciplines/NOT_LIVE/NOT_VIRTUAL/NOT_SIMULATED"
 _STAGES_TOPIC = "tournament-odds/7/1"
 _INDEX_REFRESH_SECONDS = 4 * 60 * 60
 _INDEX_WAIT_SECONDS = 150
+_RECONNECT_SECONDS = 5
 _MIN_SCORE = 0.85
 _MIN_GAP = 0.05
 _LANGUAGES = ("hu", "en")
@@ -224,6 +228,10 @@ class NotLoggedInError(RuntimeError):
     """The feed would not attach an account to the socket, so no bet can be placed."""
 
 
+class FeedClosedError(RuntimeError):
+    """The socket dropped, so the answer this call was waiting for is not coming."""
+
+
 class Feed:
     """A kept-open connection to the odds feed, plus the event index."""
 
@@ -237,17 +245,64 @@ class Feed:
         self._reader: asyncio.Task[None] | None = None
         self._waiting: dict[int, asyncio.Future[dict[str, Any]]] = {}
         self._indexed = asyncio.Event()
+        self._connected = asyncio.Event()
+        self._holders = 0
+        self._holding = asyncio.Lock()
         self._indexed_at: datetime | None = None
         self._lock = asyncio.Lock()
 
     async def start(self) -> None:
-        """Connect, start the reader, then index in the background."""
-        self._socket = await connect(self._settings.book_ws, max_size=None)
-        await self._socket.send(json.dumps([1, self._settings.book_realm, _WAMP_ROLES]))
-        await self._socket.recv()
-
-        self._reader = asyncio.create_task(self._read_answers(), name="feed:reader")
+        """Start the background index. The socket opens only when there is work."""
         self._refresh = asyncio.create_task(self._keep_fresh(), name="feed:index")
+
+    @contextlib.asynccontextmanager
+    async def connected(self) -> AsyncGenerator[None]:
+        """Hold a socket open for one piece of work, closing it after the last."""
+        async with self._holding:
+            self._holders += 1
+
+            if self._holders == 1:
+                await self._open()
+                self._reader = asyncio.create_task(
+                    self._read_answers(), name="feed:reader"
+                )
+
+        try:
+            yield
+        finally:
+            async with self._holding:
+                self._holders -= 1
+
+                if self._holders == 0:
+                    await self._disconnect()
+
+    async def _disconnect(self) -> None:
+        """Drop the socket and the reader that owns it, if there is one."""
+        if self._reader is not None:
+            self._reader.cancel()
+            self._reader = None
+
+        self._connected.clear()
+
+        if self._socket is None:
+            return
+
+        await self._socket.close()
+        self._socket = None
+
+        log.info("feed_closed")
+
+    async def _open(self) -> None:
+        """Open a socket and greet it, so calls may be made on it."""
+        socket = await connect(self._settings.book_ws, max_size=None)
+
+        await socket.send(json.dumps([1, self._settings.book_realm, _WAMP_ROLES]))
+        await socket.recv()
+
+        self._socket = socket
+        self._connected.set()
+
+        log.info("feed_connected")
 
     async def authenticate(self, ce_session: str) -> str:
         """Attach an account to this socket, so bets may be placed on it.
@@ -273,7 +328,7 @@ class Feed:
     async def place_bet(self, offers: Sequence[LegOffer], stake: float) -> dict[str, Any]:
         """Place one bet covering every leg, and return whatever the feed says."""
         return await self._call_raw(
-            "/sports#placeBetV2",
+            _PLACE_BET,
             {
                 "oddsValidationType": "ACCEPT_ANY",
                 "liveOddsValidationType": "ACCEPT_ANY",
@@ -297,13 +352,11 @@ class Feed:
         )
 
     async def stop(self) -> None:
-        """Drop the background tasks and close the socket."""
-        for task in (self._refresh, self._reader):
-            if task is not None:
-                task.cancel()
+        """Drop the background index and whatever socket is still open."""
+        if self._refresh is not None:
+            self._refresh.cancel()
 
-        if self._socket is not None:
-            await self._socket.close()
+        await self._disconnect()
 
     @property
     def events(self) -> int:
@@ -334,8 +387,31 @@ class Feed:
     async def _call_raw(
         self, procedure: str, arguments: dict[str, Any]
     ) -> dict[str, Any]:
-        """Call one procedure and wait for its own answer."""
-        assert self._socket is not None
+        """Call one procedure and wait for its own answer, over one reconnect."""
+        try:
+            return await self._attempt(procedure, arguments)
+        except FeedClosedError:
+            if procedure == _PLACE_BET:
+                raise
+
+            log.info("feed_call_retried", procedure=procedure)
+
+            return await self._attempt(procedure, arguments)
+
+    async def _attempt(self, procedure: str, arguments: dict[str, Any]) -> dict[str, Any]:
+        """One call on the socket that is up now.
+
+        Raises:
+            FeedClosedError: The socket dropped before an answer arrived.
+        """
+        try:
+            async with asyncio.timeout(_RECONNECT_SECONDS):
+                await self._connected.wait()
+        except TimeoutError as error:
+            raise FeedClosedError("no socket") from error
+
+        socket = self._socket
+        assert socket is not None
         self._request += 1
         mine = self._request
         waiting: asyncio.Future[dict[str, Any]] = (
@@ -343,9 +419,15 @@ class Feed:
         )
         self._waiting[mine] = waiting
 
-        await self._socket.send(
-            json.dumps([_WAMP_CALL, mine, {}, procedure, [], arguments])
-        )
+        try:
+            await socket.send(
+                json.dumps([_WAMP_CALL, mine, {}, procedure, [], arguments])
+            )
+        except ConnectionClosed as error:
+            self._waiting.pop(mine, None)
+
+            raise FeedClosedError(str(error)) from error
+
         result = await waiting
         failure = result.pop(_FAILED, None)
 
@@ -360,21 +442,48 @@ class Feed:
         return {}
 
     async def _read_answers(self) -> None:
-        """Own ``recv`` and hand each answer to whoever asked for it."""
-        assert self._socket is not None
-
+        """Own the socket: hand out every answer, and rebuild it when it drops."""
         while True:
-            message: list[Any] = json.loads(await self._socket.recv())
-            # A RESULT is tagged with the request id; an ERROR repeats it one
-            # place later, after the message type it is complaining about.
-            if message[0] == _WAMP_RESULT:
-                waiting = self._waiting.pop(message[1], None)
-                if waiting is not None and not waiting.done():
-                    waiting.set_result(message[4])
-            elif message[0] == _WAMP_ERROR:
-                waiting = self._waiting.pop(message[2], None)
-                if waiting is not None and not waiting.done():
-                    waiting.set_result({_FAILED: _describe(message[4:])})
+            socket = self._socket
+            assert socket is not None
+
+            try:
+                async for frame in socket:
+                    self._deliver(json.loads(frame))
+            except ConnectionClosed:
+                pass
+
+            self._abandon()
+
+            while not self._connected.is_set():
+                try:
+                    await self._open()
+                except OSError as error:
+                    log.warning("feed_reconnect_failed", detail=str(error))
+                    await asyncio.sleep(_RECONNECT_SECONDS)
+
+    def _deliver(self, message: list[Any]) -> None:
+        """Hand one frame to whoever asked for it."""
+        if message[0] == _WAMP_RESULT:
+            waiting = self._waiting.pop(message[1], None)
+            if waiting is not None and not waiting.done():
+                waiting.set_result(message[4])
+        elif message[0] == _WAMP_ERROR:
+            waiting = self._waiting.pop(message[2], None)
+            if waiting is not None and not waiting.done():
+                waiting.set_result({_FAILED: _describe(message[4:])})
+
+    def _abandon(self) -> None:
+        """Tell every caller still waiting that its answer is not coming."""
+        self._connected.clear()
+
+        for waiting in self._waiting.values():
+            if not waiting.done():
+                waiting.set_exception(FeedClosedError("socket closed"))
+
+        self._waiting.clear()
+
+        log.warning("feed_disconnected")
 
     def _now(self) -> datetime:
         """The current time where the tipster's hours are defined."""
@@ -419,7 +528,10 @@ class Feed:
         """Index on waking, then every few hours until the quiet window returns."""
         while True:
             if not self._asleep() or not self._indexed.is_set():
-                await self._reindex()
+                try:
+                    await self._reindex()
+                except FeedClosedError:
+                    log.warning("index_interrupted")
 
             due = self._until_next()
 
@@ -470,7 +582,7 @@ class Feed:
 
     async def _reindex(self) -> None:
         """Walk every tournament of every watched sport and note its events."""
-        async with self._lock:
+        async with self._lock, self.connected():
             operator = self._settings.book_operator
             sports = [
                 record["id"]

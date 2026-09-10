@@ -29,7 +29,8 @@ def router(context: Context) -> APIRouter:
             request,
             "dashboard.html",
             {
-                "service": context.status() | {"channels": list(context.source.channels)},
+                "service": context.status()
+                | {"channels": list(context.telegram.channels)},
                 "feed": context.feed(),
                 "limits": context.limits(),
                 "totals": await context.store.totals()

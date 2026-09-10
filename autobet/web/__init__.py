@@ -9,7 +9,7 @@ from autobet.bookmaker import Bookmaker
 from autobet.config import Settings
 from autobet.pipeline import PipelineState
 from autobet.storage import Store
-from autobet.telegram import TelegramSource
+from autobet.telegram import Telegram
 from autobet.web import dashboard, health
 from autobet.web.context import Context
 
@@ -18,27 +18,16 @@ def build_app(
     settings: Settings,
     store: Store,
     state: PipelineState,
-    source: TelegramSource,
+    telegram: Telegram,
     bookmaker: Bookmaker,
 ) -> FastAPI:
-    """Create the control-plane app with every page mounted.
-
-    Args:
-        settings: Runtime configuration.
-        store: The database, for read-only views.
-        state: Live pipeline counters.
-        source: The running Telegram source, asked whether it is still live.
-        bookmaker: Asked how fresh its event index is.
-
-    Returns:
-        A FastAPI application.
-    """
+    """Create the control-plane app with every page mounted."""
     app = FastAPI(title="autobet", docs_url=None, redoc_url=None)
     context = Context(
         settings=settings,
         store=store,
         state=state,
-        source=source,
+        telegram=telegram,
         bookmaker=bookmaker,
     )
 

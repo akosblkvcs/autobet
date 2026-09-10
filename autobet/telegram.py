@@ -73,10 +73,8 @@ def message_id(chat_id: int, telegram_message_id: int) -> str:
     return f"{chat_id}:{telegram_message_id}"
 
 
-class TelegramSource:
+class Telegram:
     """Yields messages from the watched chats, in arrival order."""
-
-    name = "telegram"
 
     def __init__(self, settings: Settings) -> None:
         """Build the client and subscribe; no network happens until ``start``."""

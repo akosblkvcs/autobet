@@ -12,7 +12,7 @@ from autobet.config import Settings
 from autobet.models import utcnow
 from autobet.pipeline import PipelineState
 from autobet.storage import Store
-from autobet.telegram import TelegramSource
+from autobet.telegram import Telegram
 
 templates = Jinja2Templates(directory=str(Path(__file__).parent / "templates"))
 
@@ -24,7 +24,7 @@ class Context:
     settings: Settings
     store: Store
     state: PipelineState
-    source: TelegramSource
+    telegram: Telegram
     bookmaker: Bookmaker
 
     def limits(self) -> dict[str, Any]:
@@ -59,7 +59,7 @@ class Context:
 
         return {
             "dry_run": self.settings.dry_run,
-            "telegram_connected": self.source.healthy(),
+            "telegram_connected": self.telegram.healthy(),
             "uptime": humanize.naturaldelta(self.state.uptime_seconds),
             "messages_seen": self.state.processed,
             "tips_parsed": self.state.tips,

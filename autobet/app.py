@@ -12,7 +12,7 @@ from autobet.config import Settings
 from autobet.parser import build_claude, build_text_prompt, parse_tip
 from autobet.pipeline import PipelineState, run_pipeline
 from autobet.storage import Store
-from autobet.telegram import TelegramSource
+from autobet.telegram import Telegram
 from autobet.web import build_app
 
 log = structlog.get_logger(__name__)
@@ -26,10 +26,10 @@ class _ManagedServer(uvicorn.Server):
 
 
 async def run_service(settings: Settings) -> None:
-    """Run the Telegram source, the bet placer and the control plane."""
+    """Run the Telegram client, the bet placer and the control plane."""
     store = await Store.connect(settings.database_url)
     state = PipelineState()
-    source = TelegramSource(settings)
+    telegram = Telegram(settings)
     bookmaker = Bookmaker(settings)
     claude = build_claude(settings)
     parse = partial(
@@ -39,18 +39,18 @@ async def run_service(settings: Settings) -> None:
         text_prompt=build_text_prompt(settings),
     )
 
-    await source.start()
+    await telegram.start()
     await bookmaker.start()
 
     log.info(
         "service_configured",
-        channels=source.channels,
+        channels=telegram.channels,
         dry_run=settings.dry_run,
     )
 
     server = _ManagedServer(
         uvicorn.Config(
-            build_app(settings, store, state, source, bookmaker),
+            build_app(settings, store, state, telegram, bookmaker),
             host=settings.http_host,
             port=settings.http_port,
             log_config=None,
@@ -65,7 +65,7 @@ async def run_service(settings: Settings) -> None:
 
     http = asyncio.create_task(server.serve(), name="http")
     pipeline = asyncio.create_task(
-        run_pipeline(source.messages(), store, state, bookmaker, parse),
+        run_pipeline(telegram.messages(), store, state, bookmaker, parse),
         name="pipeline",
     )
 
@@ -91,7 +91,7 @@ async def run_service(settings: Settings) -> None:
 
     await asyncio.gather(http, pipeline, return_exceptions=True)
     await bookmaker.stop()
-    await source.stop()
+    await telegram.stop()
 
     await claude.close()
     await store.close()

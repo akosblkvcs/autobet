@@ -6,7 +6,7 @@ from dataclasses import replace
 import structlog
 
 from autobet.config import Settings
-from autobet.feed import Feed, NotLoggedInError
+from autobet.feed import Feed
 from autobet.models import BetResult, LegOffer, Tip, utcnow
 from autobet.session import mint_ce_session
 
@@ -31,14 +31,16 @@ class Bookmaker:
         return self._feed
 
     async def start(self) -> None:
-        """Connect the feed; its event index fills in behind us."""
+        """Start the feed's background index; it connects only when it walks."""
         await self._feed.start()
-
-        if not self._dry_run:
-            await self._feed.authenticate(await mint_ce_session(self._settings))
 
     async def place(self, tip: Tip) -> BetResult:
         """Resolve every leg against the feed, then stake it unless dry run is on."""
+        async with self._feed.connected():
+            return await self._placed(tip)
+
+    async def _placed(self, tip: Tip) -> BetResult:
+        """The work itself, with a socket already open around it."""
         offers = await self._feed.resolve(tip)
 
         for leg, offer in zip(tip.legs, offers, strict=True):
@@ -85,13 +87,9 @@ class Bookmaker:
 
         placeable = [offer for offer in offers if offer is not None]
 
-        try:
-            answer = await self._feed.place_bet(placeable, tip.stake)
-        except NotLoggedInError:
-            log.info("session_expired_reminting")
+        await self._feed.authenticate(await mint_ce_session(self._settings))
 
-            await self._feed.authenticate(await mint_ce_session(self._settings))
-            answer = await self._feed.place_bet(placeable, tip.stake)
+        answer = await self._feed.place_bet(placeable, tip.stake)
 
         reference = str(answer.get("betId") or answer.get("id") or "")
 
