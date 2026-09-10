@@ -61,11 +61,7 @@ def _to_offer(row: Record, leg: TipLeg) -> LegOffer | None:
 
 
 class Store:
-    """Every table the app writes, owning its own connection pool.
-
-    It began as an archive of messages and now spans `messages`, `tips`,
-    `legs` and `bets`, so the name says what it is rather than what it holds.
-    """
+    """Every table the app writes, owning its own connection pool."""
 
     def __init__(self, pool: Pool) -> None:
         """Wrap an open pool; use :meth:`connect` rather than calling this."""
@@ -74,7 +70,6 @@ class Store:
     @classmethod
     async def connect(cls, dsn: str) -> Store:
         """Open the pool and bring the schema up to date."""
-        # Coolify's proxy drops idle connections, so retire them before it does.
         pool = await create_pool(
             dsn, min_size=1, max_size=5, max_inactive_connection_lifetime=300
         )

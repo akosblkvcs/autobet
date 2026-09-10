@@ -14,10 +14,10 @@ log = structlog.get_logger(__name__)
 
 
 class Bookmaker:
-    """The one bookmaker. Stakes only when dry run is off."""
+    """The bookmaker representation. Stakes only when dry run is off."""
 
     def __init__(self, settings: Settings) -> None:
-        """Keep the killswitches and build the feed client."""
+        """Store the settings and build the feed client."""
         self._settings = settings
         self._dry_run = settings.dry_run
         self._max_drop_percent = settings.max_odds_drop_percent

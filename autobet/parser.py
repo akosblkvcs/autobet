@@ -99,7 +99,7 @@ class _Slip(BaseModel):
 
 
 def build_claude(settings: Settings) -> AsyncAnthropic:
-    """Build the vision client, mirroring ``build_client`` for Telegram."""
+    """Build a client for the Claude API, using the configured key."""
     return AsyncAnthropic(api_key=settings.claude_api_key)
 
 

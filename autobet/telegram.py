@@ -1,4 +1,4 @@
-"""The Telegram channels we watch, as a stream of messages."""
+"""Telegram channel watch handler."""
 
 # pyright: reportMissingTypeStubs=false, reportGeneralTypeIssues=false
 # pyright: reportUnknownMemberType=false
@@ -103,6 +103,7 @@ class TelegramSource:
                 for chat in self._settings.telegram_source_chat_ids
             ]
         )
+
         log.info("telegram_connected", watching=self._channels)
 
     async def _name_of(self, chat: int) -> str:

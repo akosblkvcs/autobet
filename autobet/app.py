@@ -29,7 +29,6 @@ async def run_service(settings: Settings) -> None:
     """Run the Telegram source, the bet placer and the control plane."""
     store = await Store.connect(settings.database_url)
     state = PipelineState()
-
     source = TelegramSource(settings)
     bookmaker = Bookmaker(settings)
     claude = build_claude(settings)

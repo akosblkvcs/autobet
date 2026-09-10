@@ -1,9 +1,4 @@
-"""Schema migrations: numbered ``.sql`` files, applied once each, in order.
-
-There is no migration framework and no autogeneration. To change the schema,
-add the next numbered file; it runs on the next start. Postgres DDL is
-transactional, so a file lands whole or not at all.
-"""
+"""Schema migrations: numbered ``.sql`` files, applied once each, in order."""
 
 from pathlib import Path
 
@@ -26,9 +21,11 @@ async def apply_migrations(pool: Pool) -> None:
     for path in sorted(MIGRATIONS_DIR.glob("*.sql")):
         if path.name in applied:
             continue
+
         async with pool.acquire() as conn, conn.transaction():
             await conn.execute(path.read_text())
             await conn.execute(
                 "INSERT INTO applied_migrations (name) VALUES ($1)", path.name
             )
+
         log.info("migration_applied", name=path.name)
