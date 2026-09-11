@@ -14,7 +14,7 @@ log = structlog.get_logger(__name__)
 
 
 class Bookmaker:
-    """The bookmaker representation. Stakes only when dry run is off."""
+    """The bookmaker representation."""
 
     def __init__(self, settings: Settings) -> None:
         """Store the settings and build the feed client."""
@@ -27,15 +27,15 @@ class Bookmaker:
 
     @property
     def feed(self) -> Feed:
-        """The feed client, so the dashboard can report how fresh it is."""
+        """The feed client."""
         return self._feed
 
     async def start(self) -> None:
-        """Start the feed's background index; it connects only when it walks."""
+        """Start the feed's background indexing."""
         await self._feed.start()
 
     async def place(self, tip: Tip) -> BetResult:
-        """Resolve every leg against the feed, then stake it unless dry run is on."""
+        """Resolve every leg against the feed, then stake it."""
         async with self._feed.connected():
             return await self._placed(tip)
 

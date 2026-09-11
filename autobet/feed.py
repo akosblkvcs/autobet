@@ -44,7 +44,9 @@ _FIXTURE_SIDES = re.compile(r" - | vs\.? ")
 _DECIMAL_LINE = re.compile(r"(\d+)[.,](\d+)")
 _SELECTION_PARTS = re.compile(r"\s*(?:/|,|\bvagy\b|\bor\b)\s*")
 _SHORTHAND = re.compile(r"[1x2]+")
-_NUMERIC = re.compile(r"-?\d+\.?\d*")
+_SIDED_LINE = re.compile(r"\(([-+]?\d+(?:[.,]\d+)?)\)")
+_LINE_TOKEN = re.compile(r"[-+]?\d+(?:[.,]\d+)?")
+_NUMERIC = re.compile(r"[-+]?\d+\.?\d*")
 _TRANSLITERATED = str.maketrans({"j": "i", "y": "i", "w": "v", "k": "c"})
 
 
@@ -94,12 +96,11 @@ def _normalise(name: str) -> str:
 
 def _shape(name: str) -> tuple[int, frozenset[float]]:
     """What a market bets on: how many things at once, and at which lines."""
-    normalised = _normalise(name)
-    lines = frozenset(
-        float(word) for word in normalised.split() if _NUMERIC.fullmatch(word)
-    )
+    words = _normalise(name).split()
 
-    return normalised.count("+"), lines
+    lines = frozenset(abs(float(word)) for word in words if _NUMERIC.fullmatch(word))
+
+    return sum(word == "+" for word in words), lines
 
 
 def _market_score(wanted: str, candidate: str) -> float:
@@ -691,12 +692,16 @@ class Feed:
         prices = {offer["outcomeId"]: offer for offer in grouped.get("BETTING_OFFER", [])}
         wanted = _selection(leg, event)
         sides = {event.home_id: "#HOME", event.away_id: "#AWAY"}
-        found = [
-            (named[market_of[outcome["id"]]], outcome)
+        matched = [
+            (tier, named[market_of[outcome["id"]]], outcome)
             for outcome in grouped.get("OUTCOME", [])
             if market_of.get(outcome["id"]) in named
             and outcome["id"] in prices
-            and _backs(outcome, leg, wanted, sides)
+            and (tier := _backs(outcome, leg, wanted, sides)) is not None
+        ]
+        closest = min((tier for tier, _, _ in matched), default=0)
+        found = [
+            (market, outcome) for tier, market, outcome in matched if tier == closest
         ]
 
         if len(found) == 1:
@@ -755,17 +760,40 @@ def _over_under(folded: str) -> str | None:
     return None
 
 
+def _line(text: str) -> float:
+    """One signed line, however it was punctuated."""
+    return float(text.replace(",", "."))
+
+
+def _lines_named(leg: TipLeg) -> frozenset[float]:
+    """Every signed line the leg names, in its market or in its selection."""
+    spelled = (
+        _normalise(f"{leg.market} {leg.selection}").replace("(", " ").replace(")", " ")
+    )
+
+    return frozenset(
+        _line(word) for word in spelled.split() if _LINE_TOKEN.fullmatch(word)
+    )
+
+
 def _backs(
     outcome: dict[str, Any],
     leg: TipLeg,
     wanted: tuple[str | None, str | None],
     sides: dict[str, str],
-) -> bool:
-    """Whether one outcome is the bet a leg names."""
+) -> int | None:
+    """How specifically an outcome is the bet a leg names; lower is better."""
     key, code = wanted
 
-    if key is not None and outcome.get("headerNameKey") == key:
-        return True
+    sided = _SIDED_LINE.search(str(outcome.get("translatedName") or ""))
+
+    if sided is not None and _line(sided.group(1)) not in _lines_named(leg):
+        return None
+
+    shown = _fold(_normalise(str(outcome.get("translatedName") or "")))
+
+    if shown and shown == _fold(_normalise(leg.selection)):
+        return 0
 
     marked = outcome.get("code") or ""
     for participant, side in sides.items():
@@ -773,11 +801,12 @@ def _backs(
             marked = marked.replace(f"#P{participant}", side)
 
     if code and marked == code:
-        return True
+        return 1
 
-    shown = _fold(_normalise(str(outcome.get("translatedName") or "")))
+    if key is not None and outcome.get("headerNameKey") == key:
+        return 2
 
-    return bool(shown) and shown == _fold(_normalise(leg.selection))
+    return None
 
 
 def _selection(leg: TipLeg, event: IndexedEvent) -> tuple[str | None, str | None]:

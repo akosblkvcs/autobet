@@ -25,6 +25,17 @@ class _ManagedServer(uvicorn.Server):
         """Do nothing; :func:`run_service` handles SIGINT/SIGTERM centrally."""
 
 
+def _stopping() -> asyncio.Event:
+    """Create an event that is set when the service should stop."""
+    stop = asyncio.Event()
+    loop = asyncio.get_running_loop()
+
+    for sig in (signal.SIGINT, signal.SIGTERM):
+        loop.add_signal_handler(sig, stop.set)
+
+    return stop
+
+
 async def run_service(settings: Settings) -> None:
     """Run the Telegram client, the bet placer and the control plane."""
     store = await Store.connect(settings.database_url)
@@ -58,10 +69,7 @@ async def run_service(settings: Settings) -> None:
         )
     )
 
-    stop = asyncio.Event()
-    loop = asyncio.get_running_loop()
-    for sig in (signal.SIGINT, signal.SIGTERM):
-        loop.add_signal_handler(sig, stop.set)
+    stop = _stopping()
 
     http = asyncio.create_task(server.serve(), name="http")
     pipeline = asyncio.create_task(
@@ -70,7 +78,7 @@ async def run_service(settings: Settings) -> None:
     )
 
     def report(task: asyncio.Task[None]) -> None:
-        """Say why a task ended, since any one of them ending stops the service."""
+        """Report a task's failure and stop the service if it failed."""
         if not task.cancelled() and task.exception() is not None:
             log.error("task_failed", task=task.get_name(), exc_info=task.exception())
 
@@ -81,18 +89,20 @@ async def run_service(settings: Settings) -> None:
 
     log.info("service_started", http=f"http://{settings.http_host}:{settings.http_port}")
 
+    # Wait for a signal to stop the service, or for one of the tasks to end.
     await stop.wait()
 
     log.info("service_stopping")
 
+    # The server is asked to stop, and finishes the requests it already has.
     server.should_exit = True
 
     pipeline.cancel()
 
     await asyncio.gather(http, pipeline, return_exceptions=True)
+
     await bookmaker.stop()
     await telegram.stop()
-
     await claude.close()
     await store.close()
 

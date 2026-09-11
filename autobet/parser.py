@@ -70,10 +70,9 @@ mean an accumulator.
     "X nyer (rendes játékidő)"         -> "1X2 - Rendes játékidő"
     "Over 2.5 gól"                     -> "Gólszám 2.5 - Rendes játékidő"
     "X -2 ázsiai hendikep"             -> "Ázsiai hendikep -2 - Rendes játékidő"
-  A handicap or total line belongs in the market name and never in the
-  selection: the market is "Ázsiai hendikep -2" and the selection is the plain
-  team name. If you cannot map it confidently to a market a bookmaker would
-  list, return no legs rather than inventing one.
+  Keep the line the tipster quoted, with its sign, exactly as they wrote it.
+  If you cannot map the bet confidently to a market a bookmaker would list,
+  return no legs rather than inventing one.
 - selection: what is being backed, as the bookmaker would label it — a team
   name for a winner market, "Igen"/"Nem" for both-teams-to-score, "Több, mint
   N"/"Kevesebb, mint N" for totals, "Döntetlen" for a draw.
