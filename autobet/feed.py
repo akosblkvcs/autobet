@@ -44,6 +44,7 @@ _FIXTURE_SIDES = re.compile(r" - | vs\.? ")
 _DECIMAL_LINE = re.compile(r"(\d+)[.,](\d+)")
 _SELECTION_PARTS = re.compile(r"\s*(?:/|,|\bvagy\b|\bor\b)\s*")
 _SHORTHAND = re.compile(r"[1x2]+")
+_TEAM_SLOT = "{csapat}"
 _SIDED_LINE = re.compile(r"\(([-+]?\d+(?:[.,]\d+)?)\)")
 _LINE_TOKEN = re.compile(r"[-+]?\d+(?:[.,]\d+)?")
 _NUMERIC = re.compile(r"[-+]?\d+\.?\d*")
@@ -101,6 +102,19 @@ def _shape(name: str) -> tuple[int, frozenset[float]]:
     lines = frozenset(abs(float(word)) for word in words if _NUMERIC.fullmatch(word))
 
     return sum(word == "+" for word in words), lines
+
+
+def _asked(leg: TipLeg, event: IndexedEvent) -> list[str]:
+    """The market names a leg could mean, filling a `{csapat}` left unreplaced."""
+    if _TEAM_SLOT not in leg.market:
+        return [leg.market]
+
+    sides = two_sides(event.name)
+
+    if sides is None:
+        return [leg.market]
+
+    return [leg.market.replace(_TEAM_SLOT, side) for side in sides]
 
 
 def _market_score(wanted: str, candidate: str) -> float:
@@ -209,6 +223,11 @@ def _aliases(records: Sequence[dict[str, Any]], side: str) -> tuple[str, ...]:
     return tuple(sorted(name for name in names if name))
 
 
+def _upcoming(tournament: dict[str, Any]) -> int:
+    """How many fixtures a tournament says it still has to play."""
+    return int(tournament.get("numberOfUpcomingMatches") or 0)
+
+
 def _indexed(records: Sequence[dict[str, Any]]) -> IndexedEvent:
     """Fold one fixture's per-language records into a single index entry."""
     first = records[0]
@@ -242,6 +261,7 @@ class Feed:
         self._socket: ClientConnection | None = None
         self._request = 0
         self._events: list[IndexedEvent] = []
+        self._held: dict[str, int] = {}
         self._refresh: asyncio.Task[None] | None = None
         self._reader: asyncio.Task[None] | None = None
         self._waiting: dict[int, asyncio.Future[dict[str, Any]]] = {}
@@ -602,15 +622,59 @@ class Feed:
                     if record["_type"] == "TOURNAMENT" and record.get("numberOfEvents")
                 ]
                 for tournament in tournaments:
-                    events += [
+                    found = [
                         _indexed(records)
                         for records in await self._fixtures(str(tournament["id"]))
                     ]
+                    self._held[str(tournament["id"])] = _upcoming(tournament)
+                    events += found
 
             self._events = events
             self._indexed_at = datetime.now(UTC)
             self._indexed.set()
             log.info("feed_indexed", events=len(events), sports=len(sports))
+
+    async def _rewalk(self, sport: str) -> bool:
+        """Re-read the tournaments of one sport that have grown since the walk."""
+        operator = self._settings.book_operator
+        wanted = [
+            record["id"]
+            for record in await self._call(f"/sports/{operator}/hu/{_DISCIPLINES_TOPIC}")
+            if record["_type"] == "SPORT" and record["name"] == sport
+        ]
+
+        if not wanted:
+            return False
+
+        grown = [
+            record
+            for record in await self._call(
+                f"/sports/{operator}/hu/tournaments/{wanted[0]}"
+            )
+            if record["_type"] == "TOURNAMENT"
+            and _upcoming(record) != self._held.get(str(record["id"]), 0)
+        ]
+
+        if not grown:
+            log.info("sport_unchanged", sport=sport)
+
+            return False
+
+        fresh: list[IndexedEvent] = []
+        for tournament in grown:
+            found = [
+                _indexed(records)
+                for records in await self._fixtures(str(tournament["id"]))
+            ]
+            self._held[str(tournament["id"])] = _upcoming(tournament)
+            fresh += found
+
+        known = {event.id for event in fresh}
+        self._events = [e for e in self._events if e.id not in known] + fresh
+
+        log.info("sport_rewalked", sport=sport, tournaments=len(grown), events=len(fresh))
+
+        return True
 
     def find_event(self, fixture: str) -> IndexedEvent | None:
         """Which indexed event a tip's event line names, or None if unclear."""
@@ -646,7 +710,23 @@ class Feed:
         """Map every leg of a tip to the offer that would be staked."""
         await self._ready()
 
-        return [await self._resolve_leg(leg) for leg in tip.legs]
+        offers = [await self._resolve_leg(leg) for leg in tip.legs]
+        missing = [
+            leg
+            for leg, offer in zip(tip.legs, offers, strict=True)
+            if offer is None and leg.sport and self.find_event(leg.event) is None
+        ]
+
+        for sport in {leg.sport for leg in missing}:
+            if not await self._rewalk(sport):
+                continue
+
+            offers = [
+                offer if offer is not None else await self._resolve_leg(leg)
+                for leg, offer in zip(tip.legs, offers, strict=True)
+            ]
+
+        return offers
 
     async def market_records(self, event: IndexedEvent) -> list[dict[str, Any]]:
         """Every market, outcome and price the feed lists for one event."""
@@ -671,11 +751,12 @@ class Feed:
         for record in records:
             grouped.setdefault(record["_type"], []).append(record)
 
+        asked = _asked(leg, event)
         named = {
             market["id"]: market
             for market in _top(
                 [
-                    (_market_score(leg.market, str(m["name"])), m)
+                    (max(_market_score(a, str(m["name"])) for a in asked), m)
                     for m in grouped.get("MARKET", [])
                 ]
             )

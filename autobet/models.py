@@ -55,6 +55,8 @@ class TipLeg:
     selection: str
     odds: float | None
     """What the tipster printed, or None when the message carried no price."""
+    sport: str = ""
+    """Named as the book names it, so a missed event can re-read that board."""
 
 
 @dataclass(frozen=True, slots=True)

@@ -36,6 +36,8 @@ finished, and staking them as one slip would be a wager nobody proposed.
 For "to_place", return one leg per selection, in the order shown; several
 selections mean an accumulator. For anything else return no legs.
 
+- sport: which sport this is, named as the bet-type list below names it
+  (or in Hungarian if there is no list).
 - event: the two teams or competitors, as printed.
 - market: the bet type, as printed, such as "1X2 - Rendes játékidő" or
   "Money Line - Match".
@@ -63,6 +65,8 @@ never a bet**, however many numbers it contains.
 For "to_place", return one leg per selection. Most messages hold one; several
 mean an accumulator.
 
+- sport: which sport this is, named as the bet-type list below names it
+  (or in Hungarian if there is no list).
 - event: the two teams or competitors, exactly as written in the message.
 - market: **the bookmaker's name for the bet type, not the tipster's phrasing.**
   The tipster writes prose; translate it to the market the bookmaker lists, in
@@ -83,6 +87,7 @@ mean an accumulator.
 class _Leg(BaseModel):
     """One selection, as Claude reads it off the image."""
 
+    sport: str
     event: str
     market: str
     selection: str
@@ -178,6 +183,7 @@ async def parse_tip(
 
     legs = tuple(
         TipLeg(
+            sport=leg.sport,
             event=leg.event,
             market=leg.market,
             selection=leg.selection,
