@@ -24,14 +24,20 @@ dev = [
   "ruff>=0.16",
   "mypy>=2.3",
   "asyncpg-stubs>=0.31",
+  "pytest>=9.1.1",
 ]
 
 [tool.uv]
 package = false
 
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
+addopts = "-q --strict-markers --strict-config"
+
 [tool.mypy]
 strict = true
-files = ["autobet"]
+files = ["autobet", "tests"]
 
 [[tool.mypy.overrides]]
 module = ["telethon.*"]
@@ -39,7 +45,7 @@ ignore_missing_imports = true
 
 [tool.pyright]
 typeCheckingMode = "strict"
-include = ["autobet"]
+include = ["autobet", "tests"]
 venvPath = "."
 venv = ".venv"
 
