@@ -1,4 +1,4 @@
-.PHONY: install fmt lint types check dev run login chats migrate markets psql db-reset db-wipe
+.PHONY: install fmt lint types test check dev run login chats migrate markets psql db-reset db-wipe
 
 install:
 	uv sync
@@ -14,7 +14,10 @@ lint:
 types:
 	uv run mypy
 
-check: lint types
+test:
+	uv run pytest
+
+check: lint types test
 
 dev:
 	process-compose up
