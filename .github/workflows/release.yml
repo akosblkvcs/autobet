@@ -12,6 +12,9 @@ permissions:
 
 jobs:
   release:
+    concurrency:
+      group: release
+      cancel-in-progress: false
     runs-on: ubuntu-latest
     env:
       GH_TOKEN: ${{ github.token }}
