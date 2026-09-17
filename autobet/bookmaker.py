@@ -80,9 +80,17 @@ class Bookmaker:
 
             return result
 
-        placeable = [offer for offer in offers if offer is not None]
-
         await connection.authenticate(await mint_ce_session(self._settings))
+
+        repriced = await self._repriced(connection, offers)
+        moved = self._refuse(tip, repriced)
+
+        if moved:
+            log.info("bet_refused", refusal=moved, legs=len(tip.legs), late=True)
+
+            return replace(result, refusal=moved, offers=tuple(repriced))
+
+        placeable = [offer for offer in repriced if offer is not None]
 
         answer = await connection.place_bet(placeable, tip.stake)
 
@@ -96,6 +104,20 @@ class Bookmaker:
         log.info("bet_accepted", reference=reference, stake=tip.stake)
 
         return replace(result, reference=reference)
+
+    async def _repriced(
+        self, connection: Connection, offers: list[LegOffer | None]
+    ) -> list[LegOffer | None]:
+        """The same offers at today's price, or None where the book dropped one."""
+        resolved = [offer for offer in offers if offer is not None]
+        live = await connection.prices([offer.offer_id for offer in resolved])
+
+        return [
+            replace(offer, odds=live[offer.offer_id])
+            if offer is not None and offer.offer_id in live
+            else None
+            for offer in offers
+        ]
 
     def _refuse(self, tip: Tip, offers: list[LegOffer | None]) -> str:
         """Say why this tip must not be staked, or "" when it may be."""

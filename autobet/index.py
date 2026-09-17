@@ -73,7 +73,9 @@ class Index:
         missing = [
             leg
             for leg, offer in zip(tip.legs, offers, strict=True)
-            if offer is None and leg.sport and find_event(events, leg.event) is None
+            if offer is None
+            and leg.sport
+            and find_event(events, leg.event, leg.sport) is None
         ]
 
         for sport in {leg.sport for leg in missing}:
@@ -96,7 +98,7 @@ class Index:
         self, connection: Connection, events: list[IndexedEvent], leg: TipLeg
     ) -> LegOffer | None:
         """Find the one betting offer a leg names, or None if anything is unclear."""
-        event = find_event(events, leg.event)
+        event = find_event(events, leg.event, leg.sport)
         if event is None:
             return None
 

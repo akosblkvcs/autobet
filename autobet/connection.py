@@ -26,6 +26,10 @@ class NotLoggedInError(RuntimeError):
     """The feed would not attach an account to the socket, so no bet can be placed."""
 
 
+class FeedCallError(RuntimeError):
+    """The feed answered a call with an error, so it says nothing about the board."""
+
+
 def _describe(parts: list[Any]) -> str:
     """The human-readable half of a WAMP error frame, if it carries one."""
     for part in parts:
@@ -66,12 +70,10 @@ class Connection:
 
         failure = _describe(frame[4:])
 
-        log.warning("feed_call_failed", procedure=procedure, detail=failure)
-
         if "logged in" in failure.lower():
             raise NotLoggedInError(failure)
 
-        return {}
+        raise FeedCallError(f"{procedure}: {failure}")
 
     async def dump(self, resource: str, language: str = "hu") -> list[dict[str, Any]]:
         """Every record the feed holds for one resource, such as `tournaments/1`."""
@@ -86,6 +88,16 @@ class Connection:
     async def match_odds(self, event_id: str) -> list[dict[str, Any]]:
         """Every market, outcome and price the feed lists for one event."""
         return await self.dump(f"{event_id}/match-odds")
+
+    async def prices(self, offer_ids: Sequence[str]) -> dict[str, float]:
+        """What the book charges for offers it has already quoted, right now."""
+        records = await self.dump(f"bettingOffers/{','.join(offer_ids)}")
+
+        return {
+            str(record["id"]): float(record["odds"])
+            for record in records
+            if record["_type"] == "BETTING_OFFER" and record.get("odds")
+        }
 
     async def authenticate(self, ce_session: str) -> str:
         """Attach an account to this socket, so bets may be placed on it.

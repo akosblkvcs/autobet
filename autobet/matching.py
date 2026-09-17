@@ -106,7 +106,7 @@ def _market_score(wanted: str, candidate: str) -> float:
     return fuzz.token_sort_ratio(_normalise(wanted), _normalise(candidate)) / 100
 
 
-def _top(scored: list[tuple[float, Any]]) -> list[Any]:
+def _top[Candidate](scored: list[tuple[float, Candidate]]) -> list[Candidate]:
     """Every candidate the score cannot separate from the best, or none at all."""
     if not scored:
         return []
@@ -120,7 +120,7 @@ def _top(scored: list[tuple[float, Any]]) -> list[Any]:
     return [candidate for score, candidate in ranked if best - score < _MIN_GAP]
 
 
-def _best(scored: list[tuple[float, Any]]) -> Any | None:
+def _best[Candidate](scored: list[tuple[float, Candidate]]) -> Candidate | None:
     """The one clear winner among scored candidates, or None if there is not one."""
     top = _top(scored)
 
@@ -209,21 +209,24 @@ def indexed_event(records: Sequence[dict[str, Any]]) -> IndexedEvent:
     )
 
 
-def find_event(events: Sequence[IndexedEvent], fixture: str) -> IndexedEvent | None:
+def find_event(
+    events: Sequence[IndexedEvent], fixture: str, sport: str = ""
+) -> IndexedEvent | None:
     """Which indexed event a tip's event line names, or None if unclear."""
     sides = two_sides(fixture)
     if sides is None:
         return None
 
-    found: IndexedEvent | None = _best(
+    candidates = [event for event in events if event.sport == sport] or events
+    found = _best(
         [
             ((_score(sides[0], event.home) + _score(sides[1], event.away)) / 2, event)
-            for event in events
+            for event in candidates
         ]
     )
 
     if found is None:
-        log.info("event_unclear", fixture=fixture, indexed=len(events))
+        log.info("event_unclear", fixture=fixture, sport=sport, indexed=len(candidates))
 
     return found
 
