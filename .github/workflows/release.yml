@@ -33,4 +33,4 @@ jobs:
             next="$major.$((minor + 1))"
           fi
 
-          gh release create "v$next" --generate-notes
+          gh release create "v$next" --target "${{ github.sha }}" --generate-notes
