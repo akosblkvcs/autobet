@@ -1,0 +1,33 @@
+name: Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      bump:
+        type: choice
+        options: [minor, major]
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+      BUMP: ${{ inputs.bump }}
+    steps:
+      - name: Create release
+        run: |
+          current=$(gh release view --json tagName --jq '.tagName | ltrimstr("v")' || echo 0.0)
+          major=$(echo "$current" | cut -d. -f1)
+          minor=$(echo "$current" | cut -d. -f2)
+
+          if [ "$BUMP" = major ]; then
+            next="$((major + 1)).0"
+          else
+            next="$major.$((minor + 1))"
+          fi
+
+          gh release create "v$next" --generate-notes
