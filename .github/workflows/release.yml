@@ -23,7 +23,7 @@ jobs:
     steps:
       - name: Create release
         run: |
-          current=$(gh release view --json tagName --jq '.tagName | ltrimstr("v")' || echo 0.0)
+          current=$(gh release list --exclude-drafts --limit 1 --json tagName --jq '.[0].tagName // "v0.0" | ltrimstr("v")')
           major=$(echo "$current" | cut -d. -f1)
           minor=$(echo "$current" | cut -d. -f2)
 
