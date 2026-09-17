@@ -2,7 +2,7 @@
 
 import pytest
 
-from autobet.feed import two_sides
+from autobet.matching import two_sides
 
 
 @pytest.mark.parametrize(

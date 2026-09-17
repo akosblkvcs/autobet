@@ -17,7 +17,7 @@ from typing import Any
 import structlog
 
 from autobet.connection import Connection
-from autobet.feed import IndexedEvent, two_sides
+from autobet.matching import IndexedEvent, two_sides
 
 log = structlog.get_logger(__name__)
 
