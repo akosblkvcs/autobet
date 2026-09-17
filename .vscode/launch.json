@@ -1,0 +1,38 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "autobet run",
+      "type": "debugpy",
+      "request": "launch",
+      "module": "autobet",
+      "args": ["run"],
+      "cwd": "${workspaceFolder}",
+      "pythonArgs": ["-Xfrozen_modules=off"],
+      "envFile": "${workspaceFolder}/.env",
+      "justMyCode": true
+    },
+    {
+      "name": "autobet markets",
+      "type": "debugpy",
+      "request": "launch",
+      "module": "autobet",
+      "args": ["markets"],
+      "cwd": "${workspaceFolder}",
+      "pythonArgs": ["-Xfrozen_modules=off"],
+      "envFile": "${workspaceFolder}/.env",
+      "justMyCode": true
+    },
+    {
+      "name": "current file",
+      "type": "debugpy",
+      "request": "launch",
+      "program": "${file}",
+      "cwd": "${workspaceFolder}",
+      "pythonArgs": ["-Xfrozen_modules=off"],
+      "envFile": "${workspaceFolder}/.env",
+      "env": { "PYTHONPATH": "${workspaceFolder}" },
+      "justMyCode": true
+    }
+  ]
+}

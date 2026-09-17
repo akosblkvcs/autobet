@@ -7,7 +7,6 @@ from typing import Any
 import humanize
 from fastapi.templating import Jinja2Templates
 
-from autobet.bookmaker import Bookmaker
 from autobet.config import Settings
 from autobet.models import utcnow
 from autobet.pipeline import PipelineState
@@ -25,7 +24,6 @@ class Context:
     store: Store
     state: PipelineState
     telegram: Telegram
-    bookmaker: Bookmaker
 
     def limits(self) -> dict[str, Any]:
         """The settings that decide whether a tip becomes a bet."""
@@ -33,19 +31,14 @@ class Context:
             "stake": str(self.settings.stake),
             "max_odds_drop": f"{self.settings.max_odds_drop_percent:g}%",
             "max_event_days_ahead": str(self.settings.max_event_days_ahead),
-            "quiet_hours": (
-                f"{self.settings.quiet_from_hour:02d}:00-"
-                f"{self.settings.quiet_until_hour:02d}:00 "
-                f"{self.settings.quiet_timezone}"
-            ),
         }
 
-    def feed(self) -> dict[str, Any]:
-        """What the event index holds and how stale it is."""
-        indexed_at = self.bookmaker.feed.indexed_at
+    async def index(self) -> dict[str, Any]:
+        """What the stored event index holds and how stale it is."""
+        indexed_at, events = await self.store.indexed()
 
         return {
-            "events_indexed": self.bookmaker.feed.events,
+            "events_indexed": events,
             "index_built": (
                 f"{humanize.naturaldelta(utcnow() - indexed_at)} ago"
                 if indexed_at

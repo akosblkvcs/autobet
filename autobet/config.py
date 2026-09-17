@@ -3,7 +3,7 @@
 from pathlib import Path
 from typing import Annotated, Literal
 
-from pydantic import BeforeValidator, Field, SecretStr
+from pydantic import BeforeValidator, Field, SecretStr, field_validator
 from pydantic_settings import BaseSettings, NoDecode
 
 from autobet.logging import LogLevel
@@ -22,6 +22,15 @@ ChatIds = Annotated[tuple[int, ...], NoDecode, BeforeValidator(_split)]
 
 class Settings(BaseSettings):
     """Everything the app needs to run, sourced from environment variables."""
+
+    @field_validator("book_ws")
+    @classmethod
+    def _encrypted(cls, value: str) -> str:
+        """The betting session is sent on this socket, so it cannot be plaintext."""
+        if value and not value.startswith("wss://"):
+            raise ValueError("BOOK_WS must be a wss:// URL")
+
+        return value
 
     environment: Literal["development", "production"] = "development"
     log_level: LogLevel = "INFO"
@@ -42,10 +51,6 @@ class Settings(BaseSettings):
     book_operator: str = ""
     book_username: str = ""
     book_password: SecretStr = SecretStr("")
-
-    quiet_from_hour: int = Field(default=23, ge=0, le=23)
-    quiet_until_hour: int = Field(default=7, ge=0, le=23)
-    quiet_timezone: str = "Europe/Budapest"
 
     database_url: str = "postgresql://postgres:postgres@localhost:5432/autobet"
 

@@ -2,8 +2,12 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping, Sequence
+from datetime import datetime
+
 from asyncpg import Pool, Record, create_pool
 
+from autobet.matching import IndexedEvent
 from autobet.migrate import apply_migrations
 from autobet.models import (
     BetResult,
@@ -17,6 +21,19 @@ from autobet.models import (
 _MESSAGE_COLUMNS = (
     "external_id, channel, sent_at, received_at, text, media_kind, media_path"
 )
+_INSERT_EVENT = """
+    INSERT INTO events (id, name, sport, home_id, away_id, home, away, starts_at)
+    VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+    ON CONFLICT (id) DO UPDATE SET
+        name = EXCLUDED.name, sport = EXCLUDED.sport,
+        home_id = EXCLUDED.home_id, away_id = EXCLUDED.away_id,
+        home = EXCLUDED.home, away = EXCLUDED.away,
+        starts_at = EXCLUDED.starts_at, indexed_at = now()
+"""
+_INSERT_TOURNAMENT = """
+    INSERT INTO tournaments (id, upcoming) VALUES ($1, $2)
+    ON CONFLICT (id) DO UPDATE SET upcoming = EXCLUDED.upcoming, indexed_at = now()
+"""
 # Derived in SQL rather than stored, so there is one source of truth.
 _TRANSPORT_LATENCY_MS = "EXTRACT(EPOCH FROM (received_at - sent_at)) * 1000"
 
@@ -39,6 +56,33 @@ def _to_leg(row: Record) -> TipLeg:
         market=row["market"],
         selection=row["selection"],
         odds=None if row["odds"] is None else float(row["odds"]),
+    )
+
+
+def _to_event(row: Record) -> IndexedEvent:
+    return IndexedEvent(
+        id=row["id"],
+        name=row["name"],
+        sport=row["sport"],
+        home_id=row["home_id"],
+        away_id=row["away_id"],
+        home=tuple(row["home"]),
+        away=tuple(row["away"]),
+        starts_at=row["starts_at"],
+    )
+
+
+def _row(event: IndexedEvent) -> tuple[object, ...]:
+    """One event as the insert's parameters."""
+    return (
+        event.id,
+        event.name,
+        event.sport,
+        event.home_id,
+        event.away_id,
+        list(event.home),
+        list(event.away),
+        event.starts_at,
     )
 
 
@@ -158,6 +202,44 @@ class Store:
                     tip.stake,
                     tip.odds,
                 )
+
+    async def replace_index(
+        self, events: Sequence[IndexedEvent], upcoming: Mapping[str, int]
+    ) -> None:
+        """Write a whole walk of the board, replacing the one before it."""
+        async with self._pool.acquire() as conn, conn.transaction():
+            await conn.execute("TRUNCATE events, tournaments")
+            await conn.executemany(_INSERT_EVENT, [_row(event) for event in events])
+            await conn.executemany(_INSERT_TOURNAMENT, list(upcoming.items()))
+
+    async def update_index(
+        self, events: Sequence[IndexedEvent], upcoming: Mapping[str, int]
+    ) -> None:
+        """Write back the tournaments one re-walk re-read, leaving the rest alone."""
+        async with self._pool.acquire() as conn, conn.transaction():
+            await conn.executemany(_INSERT_EVENT, [_row(event) for event in events])
+            await conn.executemany(_INSERT_TOURNAMENT, list(upcoming.items()))
+
+    async def events(self) -> list[IndexedEvent]:
+        """The whole index, as the matcher wants it."""
+        rows = await self._pool.fetch("SELECT * FROM events")
+
+        return [_to_event(row) for row in rows]
+
+    async def upcoming(self) -> dict[str, int]:
+        """What each tournament declared when it was walked."""
+        rows = await self._pool.fetch("SELECT id, upcoming FROM tournaments")
+
+        return {row["id"]: row["upcoming"] for row in rows}
+
+    async def indexed(self) -> tuple[datetime | None, int]:
+        """How fresh the whole index is -- its oldest row -- and how big."""
+        row = await self._pool.fetchrow(
+            "SELECT min(indexed_at) AS at, count(*) AS events FROM events"
+        )
+        assert row is not None
+
+        return row["at"], row["events"]
 
     async def totals(self) -> dict[str, int]:
         """Archive counts, including how the book answered."""

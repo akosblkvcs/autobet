@@ -16,7 +16,8 @@ from typing import Any
 
 import structlog
 
-from autobet.feed import Feed, IndexedEvent, two_sides
+from autobet.connection import Connection
+from autobet.matching import IndexedEvent, two_sides
 
 log = structlog.get_logger(__name__)
 
@@ -47,7 +48,9 @@ def families_of(records: list[dict[str, Any]], event: IndexedEvent) -> set[str]:
     }
 
 
-async def harvest(feed: Feed, events: list[IndexedEvent]) -> dict[str, list[str]]:
+async def harvest(
+    connection: Connection, events: list[IndexedEvent]
+) -> dict[str, list[str]]:
     """Collect the bet types on offer, a few events per sport.
 
     A market can name a single player rather than a team -- baseball lists
@@ -65,7 +68,7 @@ async def harvest(feed: Feed, events: list[IndexedEvent]) -> dict[str, list[str]
     for sport, chosen in sorted(sampled.items()):
         seen: Counter[str] = Counter()
         for event in chosen:
-            seen.update(families_of(await feed.market_records(event), event))
+            seen.update(families_of(await connection.match_odds(event.id), event))
 
         shared = 1 if len(chosen) == 1 else 2
         names = sorted(name for name, count in seen.items() if count >= shared)

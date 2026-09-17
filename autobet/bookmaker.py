@@ -6,9 +6,11 @@ from dataclasses import replace
 import structlog
 
 from autobet.config import Settings
-from autobet.feed import Feed
+from autobet.connection import Connection, connected
+from autobet.index import Index
 from autobet.models import BetResult, LegOffer, Tip, utcnow
 from autobet.session import mint_ce_session
+from autobet.storage import Store
 
 log = structlog.get_logger(__name__)
 
@@ -16,32 +18,23 @@ log = structlog.get_logger(__name__)
 class Bookmaker:
     """The bookmaker representation."""
 
-    def __init__(self, settings: Settings) -> None:
-        """Store the settings and build the feed client."""
+    def __init__(self, settings: Settings, store: Store) -> None:
+        """Store the settings and build the index the tips are resolved against."""
         self._settings = settings
         self._dry_run = settings.dry_run
         self._max_drop_percent = settings.max_odds_drop_percent
         self._max_event_days_ahead = settings.max_event_days_ahead
         self._forced = set(settings.telegram_force_chat_ids)
-        self._feed = Feed(settings)
-
-    @property
-    def feed(self) -> Feed:
-        """The feed client."""
-        return self._feed
-
-    async def start(self) -> None:
-        """Start the feed's background indexing."""
-        await self._feed.start()
+        self._index = Index(settings, store)
 
     async def place(self, tip: Tip) -> BetResult:
         """Resolve every leg against the feed, then stake it."""
-        async with self._feed.connected():
-            return await self._placed(tip)
+        async with connected(self._settings) as connection:
+            return await self._placed(connection, tip)
 
-    async def _placed(self, tip: Tip) -> BetResult:
-        """The work itself, with a socket already open around it."""
-        offers = await self._feed.resolve(tip)
+    async def _placed(self, connection: Connection, tip: Tip) -> BetResult:
+        """The work itself, on the socket opened for this tip."""
+        offers = await self._index.resolve(connection, tip)
 
         for leg, offer in zip(tip.legs, offers, strict=True):
             if offer is None:
@@ -87,11 +80,19 @@ class Bookmaker:
 
             return result
 
-        placeable = [offer for offer in offers if offer is not None]
+        await connection.authenticate(await mint_ce_session(self._settings))
 
-        await self._feed.authenticate(await mint_ce_session(self._settings))
+        repriced = await self._repriced(connection, offers)
+        moved = self._refuse(tip, repriced)
 
-        answer = await self._feed.place_bet(placeable, tip.stake)
+        if moved:
+            log.info("bet_refused", refusal=moved, legs=len(tip.legs), late=True)
+
+            return replace(result, refusal=moved, offers=tuple(repriced))
+
+        placeable = [offer for offer in repriced if offer is not None]
+
+        answer = await connection.place_bet(placeable, tip.stake)
 
         reference = str(answer.get("betId") or answer.get("id") or "")
 
@@ -103,6 +104,20 @@ class Bookmaker:
         log.info("bet_accepted", reference=reference, stake=tip.stake)
 
         return replace(result, reference=reference)
+
+    async def _repriced(
+        self, connection: Connection, offers: list[LegOffer | None]
+    ) -> list[LegOffer | None]:
+        """The same offers at today's price, or None where the book dropped one."""
+        resolved = [offer for offer in offers if offer is not None]
+        live = await connection.prices([offer.offer_id for offer in resolved])
+
+        return [
+            replace(offer, odds=live[offer.offer_id])
+            if offer is not None and offer.offer_id in live
+            else None
+            for offer in offers
+        ]
 
     def _refuse(self, tip: Tip, offers: list[LegOffer | None]) -> str:
         """Say why this tip must not be staked, or "" when it may be."""
@@ -138,7 +153,3 @@ class Bookmaker:
             return f"odds dropped {drop:.1f}%, limit {self._max_drop_percent:.0f}%"
 
         return ""
-
-    async def stop(self) -> None:
-        """Close the feed."""
-        await self._feed.stop()
