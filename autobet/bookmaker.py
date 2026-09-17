@@ -6,6 +6,7 @@ from dataclasses import replace
 import structlog
 
 from autobet.config import Settings
+from autobet.connection import Connection, connected
 from autobet.feed import Feed
 from autobet.models import BetResult, LegOffer, Tip, utcnow
 from autobet.session import mint_ce_session
@@ -36,12 +37,12 @@ class Bookmaker:
 
     async def place(self, tip: Tip) -> BetResult:
         """Resolve every leg against the feed, then stake it."""
-        async with self._feed.connected():
-            return await self._placed(tip)
+        async with connected(self._settings) as connection:
+            return await self._placed(connection, tip)
 
-    async def _placed(self, tip: Tip) -> BetResult:
-        """The work itself, with a socket already open around it."""
-        offers = await self._feed.resolve(tip)
+    async def _placed(self, connection: Connection, tip: Tip) -> BetResult:
+        """The work itself, on the socket opened for this tip."""
+        offers = await self._feed.resolve(connection, tip)
 
         for leg, offer in zip(tip.legs, offers, strict=True):
             if offer is None:
@@ -89,9 +90,9 @@ class Bookmaker:
 
         placeable = [offer for offer in offers if offer is not None]
 
-        await self._feed.authenticate(await mint_ce_session(self._settings))
+        await connection.authenticate(await mint_ce_session(self._settings))
 
-        answer = await self._feed.place_bet(placeable, tip.stake)
+        answer = await connection.place_bet(placeable, tip.stake)
 
         reference = str(answer.get("betId") or answer.get("id") or "")
 

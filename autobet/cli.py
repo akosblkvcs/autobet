@@ -11,6 +11,7 @@ import structlog
 from autobet import markets
 from autobet.app import run_service
 from autobet.config import Settings, load_settings
+from autobet.connection import connected
 from autobet.feed import Feed
 from autobet.logging import configure_logging
 from autobet.storage import Store
@@ -69,7 +70,9 @@ async def cmd_markets(settings: Settings) -> None:
     await feed.start()
     await feed.indexed()
 
-    vocabulary = await markets.harvest(feed, feed.indexed_events)
+    async with connected(settings) as connection:
+        vocabulary = await markets.harvest(connection, feed.indexed_events)
+
     markets.save(vocabulary, settings.market_families)
 
     print(
