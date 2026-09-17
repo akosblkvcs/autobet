@@ -5,7 +5,6 @@ from pathlib import Path
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 
-from autobet.bookmaker import Bookmaker
 from autobet.config import Settings
 from autobet.pipeline import PipelineState
 from autobet.storage import Store
@@ -19,7 +18,6 @@ def build_app(
     store: Store,
     state: PipelineState,
     telegram: Telegram,
-    bookmaker: Bookmaker,
 ) -> FastAPI:
     """Create the control-plane app with every page mounted."""
     app = FastAPI(title="autobet", docs_url=None, redoc_url=None)
@@ -28,7 +26,6 @@ def build_app(
         store=store,
         state=state,
         telegram=telegram,
-        bookmaker=bookmaker,
     )
 
     app.mount(

@@ -12,7 +12,7 @@ from autobet import markets
 from autobet.app import run_service
 from autobet.config import Settings, load_settings
 from autobet.connection import connected
-from autobet.feed import Feed
+from autobet.index import Index
 from autobet.logging import configure_logging
 from autobet.storage import Store
 from autobet.telegram import SessionError, build_client, connect_authorized
@@ -30,6 +30,7 @@ def build_parser() -> argparse.ArgumentParser:
     sub.add_parser("chats")
     sub.add_parser("migrate")
     sub.add_parser("markets")
+    sub.add_parser("index")
 
     return parser
 
@@ -64,14 +65,22 @@ async def cmd_migrate(settings: Settings) -> None:
     await store.close()
 
 
+async def cmd_index(settings: Settings) -> None:
+    """Walk the bookmaker's board and store the event index."""
+    store = await Store.connect(settings.database_url)
+
+    print(f"{await Index(settings, store).rebuild()} events indexed")
+
+    await store.close()
+
+
 async def cmd_markets(settings: Settings) -> None:
     """Harvest the bookmaker's bet types so the parser can name them."""
-    feed = Feed(settings)
-    await feed.start()
-    await feed.indexed()
+    store = await Store.connect(settings.database_url)
+    events = await store.events()
 
     async with connected(settings) as connection:
-        vocabulary = await markets.harvest(connection, feed.indexed_events)
+        vocabulary = await markets.harvest(connection, events)
 
     markets.save(vocabulary, settings.market_families)
 
@@ -80,7 +89,7 @@ async def cmd_markets(settings: Settings) -> None:
         f"across {len(vocabulary)} sports -> {settings.market_families}"
     )
 
-    await feed.stop()
+    await store.close()
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -103,6 +112,8 @@ def main(argv: list[str] | None = None) -> int:
                 asyncio.run(cmd_migrate(settings))
             case "markets":
                 asyncio.run(cmd_markets(settings))
+            case "index":
+                asyncio.run(cmd_index(settings))
             case _:
                 pass
     except SessionError as error:

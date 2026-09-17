@@ -41,7 +41,7 @@ async def run_service(settings: Settings) -> None:
     store = await Store.connect(settings.database_url)
     state = PipelineState()
     telegram = Telegram(settings)
-    bookmaker = Bookmaker(settings)
+    bookmaker = Bookmaker(settings, store)
     claude = build_claude(settings)
     parse = partial(
         parse_tip,
@@ -51,7 +51,6 @@ async def run_service(settings: Settings) -> None:
     )
 
     await telegram.start()
-    await bookmaker.start()
 
     log.info(
         "service_configured",
@@ -61,7 +60,7 @@ async def run_service(settings: Settings) -> None:
 
     server = _ManagedServer(
         uvicorn.Config(
-            build_app(settings, store, state, telegram, bookmaker),
+            build_app(settings, store, state, telegram),
             host=settings.http_host,
             port=settings.http_port,
             log_config=None,
@@ -101,7 +100,6 @@ async def run_service(settings: Settings) -> None:
 
     await asyncio.gather(http, pipeline, return_exceptions=True)
 
-    await bookmaker.stop()
     await telegram.stop()
     await claude.close()
     await store.close()

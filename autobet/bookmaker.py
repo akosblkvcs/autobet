@@ -7,9 +7,10 @@ import structlog
 
 from autobet.config import Settings
 from autobet.connection import Connection, connected
-from autobet.feed import Feed
+from autobet.index import Index
 from autobet.models import BetResult, LegOffer, Tip, utcnow
 from autobet.session import mint_ce_session
+from autobet.storage import Store
 
 log = structlog.get_logger(__name__)
 
@@ -17,23 +18,14 @@ log = structlog.get_logger(__name__)
 class Bookmaker:
     """The bookmaker representation."""
 
-    def __init__(self, settings: Settings) -> None:
-        """Store the settings and build the feed client."""
+    def __init__(self, settings: Settings, store: Store) -> None:
+        """Store the settings and build the index the tips are resolved against."""
         self._settings = settings
         self._dry_run = settings.dry_run
         self._max_drop_percent = settings.max_odds_drop_percent
         self._max_event_days_ahead = settings.max_event_days_ahead
         self._forced = set(settings.telegram_force_chat_ids)
-        self._feed = Feed(settings)
-
-    @property
-    def feed(self) -> Feed:
-        """The feed client."""
-        return self._feed
-
-    async def start(self) -> None:
-        """Start the feed's background indexing."""
-        await self._feed.start()
+        self._index = Index(settings, store)
 
     async def place(self, tip: Tip) -> BetResult:
         """Resolve every leg against the feed, then stake it."""
@@ -42,7 +34,7 @@ class Bookmaker:
 
     async def _placed(self, connection: Connection, tip: Tip) -> BetResult:
         """The work itself, on the socket opened for this tip."""
-        offers = await self._feed.resolve(connection, tip)
+        offers = await self._index.resolve(connection, tip)
 
         for leg, offer in zip(tip.legs, offers, strict=True):
             if offer is None:
@@ -139,7 +131,3 @@ class Bookmaker:
             return f"odds dropped {drop:.1f}%, limit {self._max_drop_percent:.0f}%"
 
         return ""
-
-    async def stop(self) -> None:
-        """Close the feed."""
-        await self._feed.stop()
