@@ -164,6 +164,7 @@ class IndexedEvent:
     """One fixture in the index, with every name the feed gives its two sides."""
 
     id: str
+    tournament_id: str
     name: str
     sport: str
     home_id: str
@@ -193,12 +194,13 @@ def _aliases(records: Sequence[dict[str, Any]], side: str) -> tuple[str, ...]:
     return tuple(sorted(name for name in names if name))
 
 
-def indexed_event(records: Sequence[dict[str, Any]]) -> IndexedEvent:
+def indexed_event(records: Sequence[dict[str, Any]], tournament_id: str) -> IndexedEvent:
     """Fold one fixture's per-language records into a single index entry."""
     first = records[0]
 
     return IndexedEvent(
         id=str(first["id"]),
+        tournament_id=tournament_id,
         name=str(first.get("name") or ""),
         sport=str(first.get("sportName") or ""),
         home_id=str(first.get("homeParticipantId") or ""),

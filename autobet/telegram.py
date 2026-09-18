@@ -81,7 +81,7 @@ class Telegram:
         self._settings = settings
         chats = list(settings.telegram_source_chat_ids)
         self._queue: asyncio.Queue[IncomingMessage] = asyncio.Queue()
-        self._channels: tuple[str, ...] = ()
+        self._named: dict[int, str] = {}
         self._client = build_client(settings)
         settings.telegram_media_dir.mkdir(parents=True, exist_ok=True)
 
@@ -95,14 +95,12 @@ class Telegram:
         await connect_authorized(self._client)
         await self._client.get_dialogs()
 
-        self._channels = tuple(
-            [
-                await self._name_of(chat)
-                for chat in self._settings.telegram_source_chat_ids
-            ]
-        )
+        self._named = {
+            chat: await self._name_of(chat)
+            for chat in self._settings.telegram_source_chat_ids
+        }
 
-        log.info("telegram_connected", watching=self._channels)
+        log.info("telegram_connected", watching=self.channels)
 
     async def _name_of(self, chat: int) -> str:
         """A human label for a watched chat, falling back to its id."""
@@ -120,9 +118,14 @@ class Telegram:
         return name or str(chat)
 
     @property
+    def watched(self) -> dict[int, str]:
+        """Each watched chat and its title, empty until ``start`` resolves them."""
+        return self._named
+
+    @property
     def channels(self) -> tuple[str, ...]:
         """Titles of the watched chats, empty until ``start`` has resolved them."""
-        return self._channels
+        return tuple(self._named.values())
 
     async def _on_message(self, event: Any) -> None:
         received_at = utcnow()
@@ -141,13 +144,12 @@ class Telegram:
         self._queue.put_nowait(
             IncomingMessage(
                 external_id=message_id(chat_id, int(event.message.id)),
-                channel=getattr(event.chat, "title", None) or str(event.chat_id),
+                # The name resolved at startup, not the per-message one: a bot
+                # chat carries no title and would archive as a bare id.
+                channel=self._named.get(chat_id, str(chat_id)),
                 sent_at=event.message.date,
                 received_at=received_at,
                 text=event.message.message or "",
-                media_kind=(
-                    type(event.message.media).__name__ if event.message.media else None
-                ),
                 media_path=media_path,
             )
         )

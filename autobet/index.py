@@ -52,13 +52,12 @@ class Index:
                     if record["_type"] == "TOURNAMENT" and record.get("numberOfEvents")
                 ]
                 for tournament in tournaments:
+                    tournament_id = str(tournament["id"])
                     events += [
-                        indexed_event(records)
-                        for records in await self._fixtures(
-                            connection, str(tournament["id"])
-                        )
+                        indexed_event(records, tournament_id)
+                        for records in await self._fixtures(connection, tournament_id)
                     ]
-                    upcoming[str(tournament["id"])] = _upcoming(tournament)
+                    upcoming[tournament_id] = _upcoming(tournament)
 
         await self._store.replace_index(events, upcoming)
 
@@ -140,11 +139,12 @@ class Index:
         fresh: list[IndexedEvent] = []
         upcoming: dict[str, int] = {}
         for tournament in grown:
+            tournament_id = str(tournament["id"])
             fresh += [
-                indexed_event(records)
-                for records in await self._fixtures(connection, str(tournament["id"]))
+                indexed_event(records, tournament_id)
+                for records in await self._fixtures(connection, tournament_id)
             ]
-            upcoming[str(tournament["id"])] = _upcoming(tournament)
+            upcoming[tournament_id] = _upcoming(tournament)
 
         await self._store.update_index(fresh, upcoming)
 

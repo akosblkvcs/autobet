@@ -4,8 +4,51 @@ import math
 from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime
+from enum import StrEnum
 
-FAILED = "failed: "
+
+class RefusalCode(StrEnum):
+    """Why a tip was not staked. The reason is a value, never a sentence."""
+
+    LEG_UNRESOLVED = "leg_unresolved"
+    EVENT_STARTED = "event_started"
+    ODDS_DROP = "odds_drop"
+    ODDS_RISE = "odds_rise"
+    HORIZON = "horizon"
+    INSUFFICIENT_BALANCE = "insufficient_balance"
+    USER_PAUSED = "user_paused"
+    DAILY_LOSS_LIMIT = "daily_loss_limit"
+    STAKE_TOO_SMALL = "stake_too_small"
+    PAPER_MODE = "paper_mode"
+    DRY_RUN = "dry_run"
+    BOOK_REJECTED = "book_rejected"
+
+
+class BetState(StrEnum):
+    """What became of a bet: staked, declined by us, or blown up mid-flight."""
+
+    PLACED = "placed"
+    REFUSED = "refused"
+    ERROR = "error"
+
+
+class SelectionStatus(StrEnum):
+    """How far a leg got towards an offer to stake."""
+
+    RESOLVED = "resolved"
+    NO_EVENT = "no_event"
+    NO_MARKET = "no_market"
+    NO_OUTCOME = "no_outcome"
+    NO_ODDS = "no_odds"
+    AMBIGUOUS = "ambiguous"
+
+
+@dataclass(frozen=True, slots=True)
+class Refusal:
+    """A refusal as a code plus the numbers that produced it."""
+
+    code: RefusalCode
+    detail: str = ""
 
 
 def combined(legs: Sequence[TipLeg]) -> float | None:
@@ -32,7 +75,6 @@ class IncomingMessage:
     sent_at: datetime
     received_at: datetime
     text: str
-    media_kind: str | None = None
     media_path: str | None = None
 
     @property
@@ -113,7 +155,9 @@ class MessageWithTip:
     message: IncomingMessage
     legs: tuple[TipLeg, ...]
     offers: tuple[LegOffer | None, ...] = ()
-    refusal: str = ""
+    state: BetState | None = None
+    refusal: Refusal | None = None
+    error: str = ""
     reference: str = ""
 
     def paired(self) -> list[tuple[TipLeg, LegOffer | None]]:
@@ -125,7 +169,7 @@ class MessageWithTip:
     @property
     def failed(self) -> bool:
         """Whether the tip blew up before it was judged, so no leg was looked up."""
-        return self.refusal.startswith(FAILED)
+        return self.state is BetState.ERROR
 
     @property
     def odds(self) -> float | None:
@@ -141,12 +185,21 @@ class BetResult:
     reference: str
     placed_at: datetime
     offers: tuple[LegOffer | None, ...] = ()
-    refusal: str = ""
+    refusal: Refusal | None = None
+    error: str = ""
 
     @property
     def accepted(self) -> bool:
         """Whether the bet stands. Derived, so it cannot disagree with the reason."""
-        return not self.refusal
+        return self.refusal is None and not self.error
+
+    @property
+    def state(self) -> BetState:
+        """The column the archive stores, derived from the same two fields."""
+        if self.error:
+            return BetState.ERROR
+
+        return BetState.REFUSED if self.refusal else BetState.PLACED
 
     @property
     def total_latency_ms(self) -> int:

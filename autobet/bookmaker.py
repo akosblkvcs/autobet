@@ -8,7 +8,7 @@ import structlog
 from autobet.config import Settings
 from autobet.connection import Connection, connected
 from autobet.index import Index
-from autobet.models import BetResult, LegOffer, Tip, utcnow
+from autobet.models import BetResult, LegOffer, Refusal, RefusalCode, Tip, utcnow
 from autobet.session import mint_ce_session
 from autobet.storage import Store
 
@@ -61,10 +61,11 @@ class Bookmaker:
             refusal=self._refuse(tip, offers),
         )
 
-        if not result.accepted:
+        if result.refusal is not None:
             log.info(
                 "bet_refused",
-                refusal=result.refusal,
+                refusal=result.refusal.code,
+                detail=result.refusal.detail,
                 legs=len(tip.legs),
                 tipster_odds=None if tip.odds is None else round(tip.odds, 3),
             )
@@ -85,8 +86,14 @@ class Bookmaker:
         repriced = await self._repriced(connection, offers)
         moved = self._refuse(tip, repriced)
 
-        if moved:
-            log.info("bet_refused", refusal=moved, legs=len(tip.legs), late=True)
+        if moved is not None:
+            log.info(
+                "bet_refused",
+                refusal=moved.code,
+                detail=moved.detail,
+                legs=len(tip.legs),
+                late=True,
+            )
 
             return replace(result, refusal=moved, offers=tuple(repriced))
 
@@ -99,7 +106,9 @@ class Bookmaker:
         if not reference:
             log.error("bet_not_confirmed", answer=answer)
 
-            return replace(result, refusal="bookmaker did not confirm the bet")
+            return replace(
+                result, refusal=Refusal(RefusalCode.BOOK_REJECTED, "no bet id returned")
+            )
 
         log.info("bet_accepted", reference=reference, stake=tip.stake)
 
@@ -119,29 +128,32 @@ class Bookmaker:
             for offer in offers
         ]
 
-    def _refuse(self, tip: Tip, offers: list[LegOffer | None]) -> str:
-        """Say why this tip must not be staked, or "" when it may be."""
+    def _refuse(self, tip: Tip, offers: list[LegOffer | None]) -> Refusal | None:
+        """Say why this tip must not be staked, or None when it may be."""
         placeable = [offer for offer in offers if offer is not None]
 
         if len(placeable) != len(offers):
-            return f"{len(offers) - len(placeable)} of {len(offers)} legs not in the feed"
+            missing = len(offers) - len(placeable)
+
+            return Refusal(RefusalCode.LEG_UNRESOLVED, f"{missing} of {len(offers)} legs")
 
         started = [offer for offer in placeable if offer.started]
 
         if started:
-            return f"{started[0].event_name} has already started"
+            return Refusal(RefusalCode.EVENT_STARTED, started[0].event_name)
 
         if tip.message.chat_id in self._forced:
             log.info("checks_forced", chat=tip.message.chat_id)
 
-            return ""
+            return None
 
         furthest = max(offer.days_ahead for offer in placeable)
 
         if furthest > self._max_event_days_ahead:
-            limit = self._max_event_days_ahead
-
-            return f"event is {furthest:.1f} days away, limit {limit}"
+            return Refusal(
+                RefusalCode.HORIZON,
+                f"{furthest:.1f} days away, limit {self._max_event_days_ahead}",
+            )
 
         live = math.prod(offer.odds for offer in placeable)
 
@@ -150,6 +162,9 @@ class Bookmaker:
         if drop is None:
             log.info("odds_drop_unchecked", live=round(live, 3))
         elif drop > self._max_drop_percent:
-            return f"odds dropped {drop:.1f}%, limit {self._max_drop_percent:.0f}%"
+            return Refusal(
+                RefusalCode.ODDS_DROP,
+                f"{drop:.1f}%, limit {self._max_drop_percent:.0f}%",
+            )
 
-        return ""
+        return None

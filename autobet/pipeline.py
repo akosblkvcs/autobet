@@ -7,7 +7,7 @@ from datetime import datetime
 import structlog
 
 from autobet.bookmaker import Bookmaker
-from autobet.models import FAILED, BetResult, IncomingMessage, Tip, utcnow
+from autobet.models import BetResult, IncomingMessage, Tip, utcnow
 from autobet.storage import Store
 
 log = structlog.get_logger(__name__)
@@ -94,7 +94,7 @@ async def run_pipeline(
                 odds=None if tip.odds is None else round(tip.odds, 3),
                 stake=tip.stake,
                 reference=result.reference,
-                refusal=result.refusal,
+                refusal=None if result.refusal is None else result.refusal.code,
                 latency_ms=result.total_latency_ms,
             )
         except Exception as error:
@@ -107,6 +107,6 @@ async def run_pipeline(
                         tip=tip,
                         reference="",
                         placed_at=utcnow(),
-                        refusal=f"{FAILED}{type(error).__name__}",
+                        error=type(error).__name__,
                     ),
                 )
