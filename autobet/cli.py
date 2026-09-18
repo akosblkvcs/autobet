@@ -77,7 +77,7 @@ async def cmd_index(settings: Settings) -> None:
 async def cmd_markets(settings: Settings) -> None:
     """Harvest the bookmaker's bet types so the parser can name them."""
     store = await Store.connect(settings.database_url)
-    events = await store.events()
+    events = await store.events.all()
 
     async with connected(settings) as connection:
         vocabulary = await markets.harvest(connection, events)

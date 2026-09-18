@@ -25,6 +25,9 @@ def router(context: Context) -> APIRouter:
                 status_code=403,
             )
 
+        reports = context.store.reports
+        latency = await reports.latency_percentiles()
+
         response = templates.TemplateResponse(
             request,
             "dashboard.html",
@@ -33,9 +36,8 @@ def router(context: Context) -> APIRouter:
                 | {"channels": list(context.telegram.channels)},
                 "index": await context.index(),
                 "limits": context.limits(),
-                "totals": await context.store.totals()
-                | {"transport_latency_ms": await context.store.latency_percentiles()},
-                "rows": await context.store.recent_tips(50),
+                "totals": await reports.totals() | {"transport_latency_ms": latency},
+                "rows": await context.store.bets.recent(50),
             },
         )
         response.set_cookie(

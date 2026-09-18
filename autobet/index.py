@@ -59,7 +59,7 @@ class Index:
                     ]
                     upcoming[tournament_id] = _upcoming(tournament)
 
-        await self._store.replace_index(events, upcoming)
+        await self._store.events.replace(events, upcoming)
 
         log.info("index_built", events=len(events), sports=len(sports))
 
@@ -67,7 +67,7 @@ class Index:
 
     async def resolve(self, connection: Connection, tip: Tip) -> list[LegResolution]:
         """Map every leg of a tip to the offer that would be staked."""
-        events = await self._store.events()
+        events = await self._store.events.all()
         found = [await self._resolve_leg(connection, events, leg) for leg in tip.legs]
         missing = [
             leg
@@ -121,7 +121,7 @@ class Index:
         if not wanted:
             return None
 
-        held = await self._store.upcoming()
+        held = await self._store.events.upcoming()
         grown = [
             record
             for record in await connection.dump(f"tournaments/{wanted[0]}")
@@ -144,7 +144,7 @@ class Index:
             ]
             upcoming[tournament_id] = _upcoming(tournament)
 
-        await self._store.update_index(fresh, upcoming)
+        await self._store.events.update(fresh, upcoming)
 
         log.info("sport_rewalked", sport=sport, tournaments=len(grown), events=len(fresh))
 

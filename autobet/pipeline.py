@@ -52,7 +52,7 @@ async def run_pipeline(
         parse: Reads a message and returns a tip, or None if it is not one.
     """
     async for message in messages:
-        is_new = await store.add(message)
+        is_new = await store.archive.add(message)
         state.last_message_at = message.received_at
         state.processed += 1
 
@@ -86,7 +86,7 @@ async def run_pipeline(
             state.tips += 1
             result = await bookmaker.place(tip)
 
-            await store.record(tip, result)
+            await store.bets.record(tip, result)
 
             log.info(
                 "bet_placed" if result.accepted else "bet_rejected",
@@ -101,7 +101,7 @@ async def run_pipeline(
             log.exception("tip_failed", external_id=message.external_id)
 
             if tip is not None:
-                await store.record(
+                await store.bets.record(
                     tip,
                     BetResult(
                         tip=tip,

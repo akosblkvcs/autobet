@@ -35,7 +35,7 @@ class Context:
 
     async def index(self) -> dict[str, Any]:
         """What the stored event index holds and how stale it is."""
-        indexed_at, events = await self.store.indexed()
+        indexed_at, events = await self.store.events.freshness()
 
         return {
             "events_indexed": events,
