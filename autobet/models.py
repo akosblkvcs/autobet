@@ -4,6 +4,7 @@ import math
 from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime
+from decimal import Decimal
 from enum import StrEnum
 
 
@@ -96,9 +97,7 @@ class TipLeg:
     market: str
     selection: str
     odds: float | None
-    """What the tipster printed, or None when the message carried no price."""
     sport: str = ""
-    """Named as the book names it, so a missed event can re-read that board."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -151,8 +150,7 @@ class Tip:
 
     legs: tuple[TipLeg, ...]
     odds: float | None
-    """The tipster's combined price, or None unless they priced every leg."""
-    stake: float
+    stake: Decimal
     message: IncomingMessage
 
 

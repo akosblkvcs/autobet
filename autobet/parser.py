@@ -1,6 +1,7 @@
 """Turn a message into a tip by reading its betslip screenshot."""
 
 import base64
+from decimal import Decimal
 from pathlib import Path
 from typing import Literal
 
@@ -141,7 +142,7 @@ def _content(
 async def parse_tip(
     message: IncomingMessage,
     claude: AsyncAnthropic,
-    stake: float,
+    stake: Decimal,
     text_prompt: str,
 ) -> Tip | None:
     """Extract a tip from a message's screenshot, or None if there is not one.
