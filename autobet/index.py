@@ -12,7 +12,7 @@ import structlog
 from autobet.config import Settings
 from autobet.connection import Connection, connected
 from autobet.matching import IndexedEvent, find_event, indexed_event, pick_offer
-from autobet.models import LegOffer, Tip, TipLeg
+from autobet.models import LegResolution, SelectionStatus, Tip, TipLeg
 from autobet.storage import Store
 
 log = structlog.get_logger(__name__)
@@ -65,16 +65,14 @@ class Index:
 
         return len(events)
 
-    async def resolve(self, connection: Connection, tip: Tip) -> list[LegOffer | None]:
+    async def resolve(self, connection: Connection, tip: Tip) -> list[LegResolution]:
         """Map every leg of a tip to the offer that would be staked."""
         events = await self._store.events()
-        offers = [await self._resolve_leg(connection, events, leg) for leg in tip.legs]
+        found = [await self._resolve_leg(connection, events, leg) for leg in tip.legs]
         missing = [
             leg
-            for leg, offer in zip(tip.legs, offers, strict=True)
-            if offer is None
-            and leg.sport
-            and find_event(events, leg.event, leg.sport) is None
+            for leg, resolution in zip(tip.legs, found, strict=True)
+            if resolution.status is SelectionStatus.NO_EVENT and leg.sport
         ]
 
         for sport in {leg.sport for leg in missing}:
@@ -84,29 +82,29 @@ class Index:
                 continue
 
             events = rewalked
-            offers = [
-                offer
-                if offer is not None
+            found = [
+                resolution
+                if resolution.offer is not None
                 else await self._resolve_leg(connection, events, leg)
-                for leg, offer in zip(tip.legs, offers, strict=True)
+                for leg, resolution in zip(tip.legs, found, strict=True)
             ]
 
-        return offers
+        return found
 
     async def _resolve_leg(
         self, connection: Connection, events: list[IndexedEvent], leg: TipLeg
-    ) -> LegOffer | None:
-        """Find the one betting offer a leg names, or None if anything is unclear."""
+    ) -> LegResolution:
+        """Find the one betting offer a leg names, or say how far it got."""
         event = find_event(events, leg.event, leg.sport)
         if event is None:
-            return None
+            return LegResolution(SelectionStatus.NO_EVENT)
 
         records = await connection.match_odds(event.id)
 
         if not records:
             log.info("event_has_no_odds", fixture=event.name)
 
-            return None
+            return LegResolution(SelectionStatus.NO_ODDS)
 
         return pick_offer(leg, event, records)
 

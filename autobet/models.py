@@ -138,6 +138,14 @@ class LegOffer:
 
 
 @dataclass(frozen=True, slots=True)
+class LegResolution:
+    """How far a leg got towards an offer, and the offer when it arrived."""
+
+    status: SelectionStatus
+    offer: LegOffer | None = None
+
+
+@dataclass(frozen=True, slots=True)
 class Tip:
     """A bet suggestion extracted from a message."""
 
@@ -154,17 +162,17 @@ class MessageWithTip:
 
     message: IncomingMessage
     legs: tuple[TipLeg, ...]
-    offers: tuple[LegOffer | None, ...] = ()
+    resolutions: tuple[LegResolution | None, ...] = ()
     state: BetState | None = None
     refusal: Refusal | None = None
     error: str = ""
     reference: str = ""
 
-    def paired(self) -> list[tuple[TipLeg, LegOffer | None]]:
-        """Legs next to what each one resolved to, for rendering."""
-        offers = self.offers or (None,) * len(self.legs)
+    def paired(self) -> list[tuple[TipLeg, LegResolution | None]]:
+        """Legs next to how each one resolved; None where nothing looked it up."""
+        resolutions = self.resolutions or (None,) * len(self.legs)
 
-        return list(zip(self.legs, offers, strict=True))
+        return list(zip(self.legs, resolutions, strict=True))
 
     @property
     def failed(self) -> bool:
@@ -184,9 +192,14 @@ class BetResult:
     tip: Tip
     reference: str
     placed_at: datetime
-    offers: tuple[LegOffer | None, ...] = ()
+    resolutions: tuple[LegResolution, ...] = ()
     refusal: Refusal | None = None
     error: str = ""
+
+    @property
+    def offers(self) -> tuple[LegOffer | None, ...]:
+        """Just the offers, for the checks that only care about the price."""
+        return tuple(resolution.offer for resolution in self.resolutions)
 
     @property
     def accepted(self) -> bool:

@@ -14,7 +14,7 @@ from typing import Any
 import structlog
 from rapidfuzz import fuzz
 
-from autobet.models import LegOffer, TipLeg
+from autobet.models import LegOffer, LegResolution, SelectionStatus, TipLeg
 
 log = structlog.get_logger(__name__)
 
@@ -327,8 +327,8 @@ def _selection(leg: TipLeg, event: IndexedEvent) -> tuple[str | None, str | None
 
 def pick_offer(
     leg: TipLeg, event: IndexedEvent, records: Sequence[dict[str, Any]]
-) -> LegOffer | None:
-    """The one offer a leg names among an event's markets, or None if unclear."""
+) -> LegResolution:
+    """The one offer a leg names among an event's markets, or how far it got."""
     grouped: dict[str, list[dict[str, Any]]] = {}
     for record in records:
         grouped.setdefault(record["_type"], []).append(record)
@@ -346,7 +346,7 @@ def pick_offer(
     if not named:
         log.info("market_unmatched", fixture=event.name, market=leg.market)
 
-        return None
+        return LegResolution(SelectionStatus.NO_MARKET)
 
     market_of = {
         relation["outcomeId"]: relation["marketId"]
@@ -369,16 +369,19 @@ def pick_offer(
         market, outcome = found[0]
         offer = prices[outcome["id"]]
 
-        return LegOffer(
-            leg=leg,
-            event_id=event.id,
-            event_name=event.name,
-            market_id=str(market["id"]),
-            outcome_id=str(outcome["id"]),
-            betting_type_id=str(market.get("bettingTypeId")),
-            offer_id=str(offer["id"]),
-            odds=float(offer["odds"]),
-            starts_at=event.starts_at,
+        return LegResolution(
+            SelectionStatus.RESOLVED,
+            LegOffer(
+                leg=leg,
+                event_id=event.id,
+                event_name=event.name,
+                market_id=str(market["id"]),
+                outcome_id=str(outcome["id"]),
+                betting_type_id=str(market.get("bettingTypeId")),
+                offer_id=str(offer["id"]),
+                odds=float(offer["odds"]),
+                starts_at=event.starts_at,
+            ),
         )
 
     log.info(
@@ -388,4 +391,8 @@ def pick_offer(
         matched=len(found),
     )
 
-    return None
+    # Several outcomes at the same tier means the wording fits more than one bet.
+    if len(found) > 1:
+        return LegResolution(SelectionStatus.AMBIGUOUS)
+
+    return LegResolution(SelectionStatus.NO_OUTCOME)

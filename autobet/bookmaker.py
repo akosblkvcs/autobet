@@ -8,7 +8,16 @@ import structlog
 from autobet.config import Settings
 from autobet.connection import Connection, connected
 from autobet.index import Index
-from autobet.models import BetResult, LegOffer, Refusal, RefusalCode, Tip, utcnow
+from autobet.models import (
+    BetResult,
+    LegOffer,
+    LegResolution,
+    Refusal,
+    RefusalCode,
+    SelectionStatus,
+    Tip,
+    utcnow,
+)
 from autobet.session import mint_ce_session
 from autobet.storage import Store
 
@@ -34,7 +43,8 @@ class Bookmaker:
 
     async def _placed(self, connection: Connection, tip: Tip) -> BetResult:
         """The work itself, on the socket opened for this tip."""
-        offers = await self._index.resolve(connection, tip)
+        resolutions = await self._index.resolve(connection, tip)
+        offers = [resolution.offer for resolution in resolutions]
 
         for leg, offer in zip(tip.legs, offers, strict=True):
             if offer is None:
@@ -57,7 +67,7 @@ class Bookmaker:
             tip=tip,
             reference="dry-run" if self._dry_run else "",
             placed_at=utcnow(),
-            offers=tuple(offers),
+            resolutions=tuple(resolutions),
             refusal=self._refuse(tip, offers),
         )
 
@@ -85,6 +95,12 @@ class Bookmaker:
 
         repriced = await self._repriced(connection, offers)
         moved = self._refuse(tip, repriced)
+        restated = tuple(
+            LegResolution(SelectionStatus.NO_ODDS)
+            if offer is None and resolution.offer is not None
+            else LegResolution(resolution.status, offer)
+            for resolution, offer in zip(resolutions, repriced, strict=True)
+        )
 
         if moved is not None:
             log.info(
@@ -95,11 +111,12 @@ class Bookmaker:
                 late=True,
             )
 
-            return replace(result, refusal=moved, offers=tuple(repriced))
+            return replace(result, refusal=moved, resolutions=restated)
 
         placeable = [offer for offer in repriced if offer is not None]
 
         answer = await connection.place_bet(placeable, tip.stake)
+        result = replace(result, resolutions=restated)
 
         reference = str(answer.get("betId") or answer.get("id") or "")
 

@@ -15,6 +15,7 @@ from autobet.models import (
     BetState,
     IncomingMessage,
     LegOffer,
+    LegResolution,
     MessageWithTip,
     Refusal,
     RefusalCode,
@@ -110,21 +111,29 @@ def _row(event: IndexedEvent) -> tuple[object, ...]:
     )
 
 
-def _to_offer(row: Record, leg: TipLeg) -> LegOffer | None:
-    """Rebuild what the leg resolved to, or None if it never did."""
-    if not row["offer_id"]:
+def _to_resolution(row: Record, leg: TipLeg) -> LegResolution | None:
+    """Rebuild how far the leg got, or None if nothing ever looked it up."""
+    if not row["status"]:
         return None
 
-    return LegOffer(
-        leg=leg,
-        event_id=row["event_id"],
-        event_name=row["event_name"],
-        market_id=row["market_id"],
-        outcome_id=row["outcome_id"],
-        betting_type_id=row["betting_type_id"],
-        offer_id=row["offer_id"],
-        odds=float(row["live_odds"]),
-        starts_at=row["starts_at"],
+    status = SelectionStatus(row["status"])
+
+    if not row["offer_id"]:
+        return LegResolution(status)
+
+    return LegResolution(
+        status,
+        LegOffer(
+            leg=leg,
+            event_id=row["event_id"],
+            event_name=row["event_name"],
+            market_id=row["market_id"],
+            outcome_id=row["outcome_id"],
+            betting_type_id=row["betting_type_id"],
+            offer_id=row["offer_id"],
+            odds=float(row["live_odds"]),
+            starts_at=row["starts_at"],
+        ),
     )
 
 
@@ -189,7 +198,7 @@ class Store:
 
     async def record(self, tip: Tip, result: BetResult) -> None:
         """Write the tip, its legs, what they resolved to and the bet, at once."""
-        offers = result.offers or (None,) * len(tip.legs)
+        resolutions = result.resolutions or (None,) * len(tip.legs)
 
         async with self._pool.acquire() as conn, conn.transaction():
             tip_id: int = await conn.fetchval(
@@ -205,7 +214,9 @@ class Store:
             )
             bet_id = await self._write_bet(conn, tip_id, tip, result)
 
-            for position, (leg, offer) in enumerate(zip(tip.legs, offers, strict=True)):
+            for position, (leg, resolution) in enumerate(
+                zip(tip.legs, resolutions, strict=True)
+            ):
                 leg_id: int = await conn.fetchval(
                     """
                     INSERT INTO tip_legs (
@@ -226,7 +237,7 @@ class Store:
                     leg.selection,
                     leg.odds,
                 )
-                selection_id = await self._write_selection(conn, leg_id, offer)
+                selection_id = await self._write_selection(conn, leg_id, resolution)
 
                 await conn.execute(
                     """
@@ -238,7 +249,7 @@ class Store:
                     bet_id,
                     leg_id,
                     selection_id,
-                    None if offer is None else offer.odds,
+                    resolution.offer.odds if resolution and resolution.offer else None,
                 )
 
     async def _write_bet(
@@ -284,24 +295,28 @@ class Store:
         return bet_id
 
     async def _write_selection(
-        self, conn: PoolConnectionProxy[Record], leg_id: int, offer: LegOffer | None
+        self,
+        conn: PoolConnectionProxy[Record],
+        leg_id: int,
+        resolution: LegResolution | None,
     ) -> int | None:
-        """Record what the leg resolved to, or nothing while it resolved to nothing."""
-        if offer is None:
+        """Record what the leg resolved to, or the stage it stopped at."""
+        if resolution is None:
             return None
 
+        offer = resolution.offer
         selection_id: int | None = await conn.fetchval(
             _INSERT_SELECTION,
             leg_id,
-            SelectionStatus.RESOLVED,
-            offer.event_id,
-            offer.event_name,
-            offer.market_id,
-            offer.outcome_id,
-            offer.betting_type_id,
-            offer.offer_id,
-            offer.odds,
-            offer.starts_at,
+            resolution.status,
+            offer.event_id if offer else None,
+            offer.event_name if offer else None,
+            offer.market_id if offer else None,
+            offer.outcome_id if offer else None,
+            offer.betting_type_id if offer else None,
+            offer.offer_id if offer else None,
+            offer.odds if offer else None,
+            offer.starts_at if offer else None,
         )
 
         return selection_id
@@ -390,7 +405,7 @@ class Store:
 
         leg_rows = await self._pool.fetch(
             """
-            SELECT l.*, s.event_id, s.event_name, s.market_id, s.outcome_id,
+            SELECT l.*, s.status, s.event_id, s.event_name, s.market_id, s.outcome_id,
                    s.betting_type_id, s.offer_id, s.odds AS live_odds, s.starts_at
             FROM tip_legs l
             LEFT JOIN selections s ON s.tip_leg_id = l.id
@@ -406,15 +421,15 @@ class Store:
         found: list[MessageWithTip] = []
         for row in rows:
             legs = tuple(_to_leg(one) for one in by_tip.get(row["tip_id"], []))
-            offers = tuple(
-                _to_offer(one, leg)
+            resolutions = tuple(
+                _to_resolution(one, leg)
                 for one, leg in zip(by_tip.get(row["tip_id"], []), legs, strict=True)
             )
             found.append(
                 MessageWithTip(
                     message=_to_message(row),
                     legs=legs,
-                    offers=offers,
+                    resolutions=resolutions,
                     state=None if row["state"] is None else BetState(row["state"]),
                     refusal=(
                         None
