@@ -49,5 +49,5 @@ db-reset:
 
 db-wipe:
 	docker compose exec postgres psql -U postgres -d autobet -c \
-	  "DROP TABLE IF EXISTS bets, legs, tips, messages, applied_migrations CASCADE;"
+	  "DROP SCHEMA public CASCADE; CREATE SCHEMA public;"
 

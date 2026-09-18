@@ -69,7 +69,12 @@
       {% endif %}
       {% endif %}
       {% if row.refusal %}
-      <div class="refused">refused &middot; {{ row.refusal }}</div>
+      <div class="refused">
+        refused &middot; {{ row.refusal.code.replace("_", " ") }}
+        {%- if row.refusal.detail %} &middot; {{ row.refusal.detail }}{% endif %}
+      </div>
+      {% elif row.error %}
+      <div class="refused">failed &middot; {{ row.error }}</div>
       {% elif row.reference %}
       <div class="quiet">placed &middot; {{ row.reference }}</div>
       {% endif %}
