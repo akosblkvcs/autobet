@@ -3,6 +3,7 @@
 import contextlib
 import json
 from collections.abc import AsyncGenerator, Sequence
+from decimal import Decimal
 from typing import Any, cast
 
 import structlog
@@ -120,14 +121,16 @@ class Connection:
 
         return username
 
-    async def place_bet(self, offers: Sequence[LegOffer], stake: float) -> dict[str, Any]:
+    async def place_bet(
+        self, offers: Sequence[LegOffer], stake: Decimal
+    ) -> dict[str, Any]:
         """Place one bet covering every leg, and return whatever the feed says."""
         return await self.call(
             "/sports#placeBetV2",
             {
                 "oddsValidationType": "ACCEPT_ANY",
                 "liveOddsValidationType": "ACCEPT_ANY",
-                "amount": stake,
+                "amount": float(stake),
                 "freeBet": False,
                 "lang": "hu",
                 "type": "SINGLE" if len(offers) == 1 else "MULTIPLE",

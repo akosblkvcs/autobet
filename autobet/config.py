@@ -1,5 +1,6 @@
 """Runtime configuration, loaded from the environment."""
 
+from decimal import Decimal
 from pathlib import Path
 from typing import Annotated, Literal
 
@@ -59,7 +60,7 @@ class Settings(BaseSettings):
     autobet_token: str = ""
 
     dry_run: bool = True
-    stake: int = Field(default=100, ge=100)
+    stake: Decimal = Field(default=Decimal("100"), ge=100)
     max_odds_drop_percent: float = Field(default=10.0, gt=0)
     max_event_days_ahead: int = Field(default=7, gt=0)
 
