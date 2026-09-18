@@ -42,24 +42,24 @@
     <td class="nowrap">{{ row.message.transport_latency_ms }}&nbsp;ms</td>
     <td>{{ row.message.channel }}</td>
     <td>
-      {% for leg, offer in row.paired() %}
+      {% for leg, resolution in row.paired() %}
       <div class="leg">
         <span class="odds">{{ leg.odds if leg.odds else "—" }}</span>
         <div class="event">{{ leg.event }}</div>
         <div class="market">{{ leg.market }} &rarr; {{ leg.selection }}</div>
-        {% if offer %}
+        {% if resolution and resolution.offer %}
         <div class="offer">
-          matched {{ offer.event_name }} &middot; live {{ offer.odds }}
-          {% if offer.drop_percent is not none %}
-          <span class="{{ 'drop' if offer.drop_percent > 0 else 'rise' }}">
-            {{ "%+.1f" % -offer.drop_percent }}%
+          matched {{ resolution.offer.event_name }} &middot; live {{ resolution.offer.odds }}
+          {% if resolution.offer.drop_percent is not none %}
+          <span class="{{ 'drop' if resolution.offer.drop_percent > 0 else 'rise' }}">
+            {{ "%+.1f" % -resolution.offer.drop_percent }}%
           </span>
           {% else %}
           <span class="quiet">no price given</span>
           {% endif %}
         </div>
-        {% elif not row.failed %}
-        <div class="offer unresolved">no match in the feed</div>
+        {% elif resolution %}
+        <div class="offer unresolved">{{ resolution.status.replace("_", " ") }}</div>
         {% endif %}
       </div>
       {% endfor %}
