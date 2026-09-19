@@ -118,6 +118,7 @@ class Bets:
                 state = EXCLUDED.state,
                 refusal_code = EXCLUDED.refusal_code,
                 refusal_detail = EXCLUDED.refusal_detail,
+                stake = EXCLUDED.stake,
                 odds = EXCLUDED.odds,
                 reference = EXCLUDED.reference,
                 placed_at = EXCLUDED.placed_at,
@@ -146,6 +147,8 @@ class Bets:
     ) -> int | None:
         """Record what the leg resolved to, or the stage it stopped at."""
         if resolution is None:
+            await conn.execute("DELETE FROM selections WHERE tip_leg_id = $1", leg_id)
+
             return None
 
         offer = resolution.offer

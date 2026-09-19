@@ -76,6 +76,7 @@ async def run_pipeline(
             continue
 
         tip: Tip | None = None
+        recorded = False
 
         try:
             tip = await parse(message)
@@ -87,6 +88,7 @@ async def run_pipeline(
             result = await bookmaker.place(tip)
 
             await store.bets.record(tip, result)
+            recorded = True
 
             log.info(
                 "bet_placed" if result.accepted else "bet_rejected",
@@ -100,7 +102,7 @@ async def run_pipeline(
         except Exception as error:
             log.exception("tip_failed", external_id=message.external_id)
 
-            if tip is not None:
+            if tip is not None and not recorded:
                 await store.bets.record(
                     tip,
                     BetResult(
