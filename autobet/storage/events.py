@@ -45,9 +45,13 @@ class Events:
     async def update(
         self, events: Sequence[IndexedEvent], upcoming: Mapping[str, int]
     ) -> None:
-        """Write back the tournaments one re-walk re-read, leaving the rest alone."""
+        """Replace the tournaments a re-walk re-read, leaving the rest alone."""
         async with self._pool.acquire() as conn, conn.transaction():
             await conn.executemany(_INSERT_TOURNAMENT, list(upcoming.items()))
+            await conn.execute(
+                "DELETE FROM events WHERE tournament_id = ANY($1::text[])",
+                list(upcoming),
+            )
             await conn.executemany(_INSERT_EVENT, [event_row(event) for event in events])
 
     async def all(self) -> list[IndexedEvent]:
