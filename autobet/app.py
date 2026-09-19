@@ -53,7 +53,7 @@ async def run_service(settings: Settings) -> None:
     await telegram.start()
 
     for chat_id, title in telegram.watched.items():
-        await store.register_channel(chat_id, title)
+        await store.archive.register_channel(chat_id, title)
 
     log.info(
         "service_configured",

@@ -1,0 +1,55 @@
+"""The archive: the chats watched and every message they carried."""
+
+from asyncpg import Pool
+
+from autobet.models import IncomingMessage
+
+
+class Archive:
+    """Channels and messages, the only tables ingestion writes."""
+
+    def __init__(self, pool: Pool) -> None:
+        """Share the store's pool."""
+        self._pool = pool
+
+    async def register_channel(self, chat_id: int, title: str) -> None:
+        """Name a watched chat once, so no row ever shows a bare id."""
+        await self._pool.execute(
+            """
+            INSERT INTO channels (chat_id, title) VALUES ($1, $2)
+            ON CONFLICT (chat_id) DO UPDATE SET title = EXCLUDED.title
+            """,
+            chat_id,
+            title,
+        )
+
+    async def add(self, message: IncomingMessage) -> bool:
+        """Store a message; return False if we had already archived it."""
+        async with self._pool.acquire() as conn, conn.transaction():
+            channel_id: int = await conn.fetchval(
+                """
+                INSERT INTO channels (chat_id, title) VALUES ($1, $2)
+                ON CONFLICT (chat_id) DO UPDATE SET chat_id = EXCLUDED.chat_id
+                RETURNING id
+                """,
+                message.chat_id,
+                message.channel,
+            )
+            row = await conn.fetchrow(
+                """
+                INSERT INTO messages (
+                    channel_id, external_id, sent_at, received_at, text, media_path
+                )
+                VALUES ($1, $2, $3, $4, $5, $6)
+                ON CONFLICT DO NOTHING
+                RETURNING id
+                """,
+                channel_id,
+                message.external_id,
+                message.sent_at,
+                message.received_at,
+                message.text,
+                message.media_path,
+            )
+
+        return row is not None
