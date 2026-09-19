@@ -148,9 +148,7 @@ class Index:
 
         log.info("sport_rewalked", sport=sport, tournaments=len(grown), events=len(fresh))
 
-        known = {event.id for event in fresh}
-
-        return [event for event in events if event.id not in known] + fresh
+        return [event for event in events if event.tournament_id not in upcoming] + fresh
 
     async def _matches(
         self, connection: Connection, tournament: str
