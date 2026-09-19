@@ -1,6 +1,7 @@
 """Resolve a tip against the live feed, then stake it."""
 
 import math
+from collections.abc import Sequence
 from dataclasses import replace
 
 import structlog
@@ -22,6 +23,16 @@ from autobet.session import mint_ce_session
 from autobet.storage import Store
 
 log = structlog.get_logger(__name__)
+
+_MISMATCH_RISE_PERCENT = 44.0
+
+
+def _priced(tip: Tip, offers: Sequence[LegOffer]) -> tuple[float, float | None]:
+    """The whole slip's live price, and how far it sits below the tipster's."""
+    live = math.prod(offer.odds for offer in offers)
+    drop = None if tip.odds is None else (tip.odds - live) / tip.odds * 100
+
+    return live, drop
 
 
 class Bookmaker:
@@ -147,6 +158,20 @@ class Bookmaker:
 
     def _refuse(self, tip: Tip, offers: list[LegOffer | None]) -> Refusal | None:
         """Say why this tip must not be staked, or None when it may be."""
+        mismatched = self._mismatched(tip, offers)
+
+        if mismatched is not None:
+            return mismatched
+
+        if tip.message.chat_id in self._forced:
+            log.info("checks_forced", chat=tip.message.chat_id)
+
+            return None
+
+        return self._beyond_limits(tip, [o for o in offers if o is not None])
+
+    def _mismatched(self, tip: Tip, offers: list[LegOffer | None]) -> Refusal | None:
+        """Signs this is not the bet the tipster sent. A forced chat waives none."""
         placeable = [offer for offer in offers if offer is not None]
 
         if len(placeable) != len(offers):
@@ -159,12 +184,19 @@ class Bookmaker:
         if started:
             return Refusal(RefusalCode.EVENT_STARTED, started[0].event_name)
 
-        if tip.message.chat_id in self._forced:
-            log.info("checks_forced", chat=tip.message.chat_id)
+        _, drop = _priced(tip, placeable)
 
-            return None
+        if drop is not None and -drop > _MISMATCH_RISE_PERCENT:
+            return Refusal(
+                RefusalCode.ODDS_RISE,
+                f"{-drop:.1f}% above the tipster, limit {_MISMATCH_RISE_PERCENT:.0f}%",
+            )
 
-        furthest = max(offer.days_ahead for offer in placeable)
+        return None
+
+    def _beyond_limits(self, tip: Tip, offers: list[LegOffer]) -> Refusal | None:
+        """The policy limits, which a forced chat does waive."""
+        furthest = max(offer.days_ahead for offer in offers)
 
         if furthest > self._max_event_days_ahead:
             return Refusal(
@@ -172,9 +204,7 @@ class Bookmaker:
                 f"{furthest:.1f} days away, limit {self._max_event_days_ahead}",
             )
 
-        live = math.prod(offer.odds for offer in placeable)
-
-        drop = None if tip.odds is None else (tip.odds - live) / tip.odds * 100
+        live, drop = _priced(tip, offers)
 
         if drop is None:
             log.info("odds_drop_unchecked", live=round(live, 3))
