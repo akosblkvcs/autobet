@@ -32,17 +32,18 @@ class Users:
         """Share the store's pool."""
         self._pool = pool
 
-    async def signed_in(self, subject: str, email: str) -> User | None:
+    async def signed_in(self, subject: str, email: str, admin: bool) -> User | None:
         """The user this subject belongs to, creating the row on first sign-in."""
         async with self._pool.acquire() as conn, conn.transaction():
             known = await conn.fetchrow(
                 """
-                UPDATE users SET email = $2, last_login_at = now()
+                UPDATE users SET email = $2, role = $3, last_login_at = now()
                 WHERE subject = $1 AND status = 'active'
                 RETURNING id, subject, email, role
                 """,
                 subject,
                 email,
+                Role.ADMIN if admin else Role.USER,
             )
 
             if known is not None:
@@ -54,13 +55,12 @@ class Users:
             created = await conn.fetchrow(
                 """
                 INSERT INTO users (subject, email, role, last_login_at)
-                SELECT $1, $2,
-                    CASE WHEN EXISTS (SELECT 1 FROM users) THEN 'user' ELSE 'admin' END,
-                    now()
+                VALUES ($1, $2, $3, now())
                 RETURNING id, subject, email, role
                 """,
                 subject,
                 email,
+                Role.ADMIN if admin else Role.USER,
             )
             assert created is not None
 

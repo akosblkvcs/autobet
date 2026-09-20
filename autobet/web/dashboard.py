@@ -20,6 +20,14 @@ def router(context: Context) -> APIRouter:
         if session is None:
             return RedirectResponse("/auth/login", status_code=303)
 
+        if not session.user.is_admin:
+            return templates.TemplateResponse(
+                request,
+                "forbidden.html",
+                {"reason": "this page is for administrators"},
+                status_code=403,
+            )
+
         reports = context.store.reports
         latency = await reports.latency_percentiles()
 

@@ -5,6 +5,7 @@ from pathlib import Path
 from typing import Annotated, Literal
 
 from pydantic import BeforeValidator, Field, SecretStr, field_validator
+from pydantic_core.core_schema import ValidationInfo
 from pydantic_settings import BaseSettings, NoDecode
 
 from autobet.logging import LogLevel
@@ -19,6 +20,7 @@ def _split(value: object) -> object:
 
 
 ChatIds = Annotated[tuple[int, ...], NoDecode, BeforeValidator(_split)]
+Emails = Annotated[tuple[str, ...], NoDecode, BeforeValidator(_split)]
 
 
 class Settings(BaseSettings):
@@ -30,6 +32,17 @@ class Settings(BaseSettings):
         """The betting session is sent on this socket, so it cannot be plaintext."""
         if value and not value.startswith("wss://"):
             raise ValueError("BOOK_WS must be a wss:// URL")
+
+        return value
+
+    @field_validator("oidc_issuer")
+    @classmethod
+    def _trusted(cls, value: str, info: ValidationInfo) -> str:
+        """The code and the client secret travel to this host, so it means TLS."""
+        development = info.data.get("environment") == "development"
+
+        if value and not value.startswith("https://") and not development:
+            raise ValueError("OIDC_ISSUER must be an https:// URL")
 
         return value
 
@@ -62,6 +75,7 @@ class Settings(BaseSettings):
     oidc_client_id: str = ""
     oidc_client_secret: SecretStr = SecretStr("")
     oidc_redirect_url: str = ""
+    admin_emails: Emails = ()
 
     dry_run: bool = True
     stake: Decimal = Field(default=Decimal("100"), ge=100)

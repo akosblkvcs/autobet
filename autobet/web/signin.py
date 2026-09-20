@@ -47,11 +47,11 @@ def router(context: Context) -> APIRouter:
         try:
             started = flow(request)
 
-            if not code or not secrets.compare_digest(state, started["state"]):
+            if not code or not secrets.compare_digest(state, started.state):
                 raise SignInError("the answer did not match the sign-in")
 
             subject, email = await context.provider.identify(
-                code, started["verifier"], started["nonce"]
+                code, started.verifier, started.nonce
             )
         except SignInError as error:
             log.warning("sign_in_failed", detail=str(error))
@@ -60,7 +60,8 @@ def router(context: Context) -> APIRouter:
                 request, "forbidden.html", {"reason": str(error)}, status_code=403
             )
 
-        user = await context.store.users.signed_in(subject, email)
+        admin = email in context.settings.admin_emails
+        user = await context.store.users.signed_in(subject, email, admin)
 
         if user is None:
             log.warning("sign_in_refused", subject=subject)

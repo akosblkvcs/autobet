@@ -4,12 +4,13 @@ import base64
 import hashlib
 import json
 import secrets
-from typing import Any
+import time
 
 import httpx2
 import structlog
 from fastapi import Request
 from fastapi.responses import RedirectResponse
+from pydantic import BaseModel, ValidationError
 
 from autobet.config import Settings
 from autobet.models import SignedIn
@@ -28,17 +29,59 @@ class SignInError(RuntimeError):
     """The sign-in could not be completed. Carries what to tell the caller."""
 
 
+class Endpoints(BaseModel):
+    """The parts of the provider's discovery document this flow uses."""
+
+    authorization_endpoint: str
+    token_endpoint: str
+    userinfo_endpoint: str
+
+
+class Tokens(BaseModel):
+    """What the token endpoint answers a redeemed code with."""
+
+    access_token: str
+    id_token: str
+
+
+class Claims(BaseModel):
+    """The ID token claims this flow is allowed to believe."""
+
+    iss: str
+    sub: str
+    aud: str | list[str]
+    exp: int
+    nonce: str = ""
+
+
+class Profile(BaseModel):
+    """Who userinfo says the caller is."""
+
+    sub: str
+    email: str = ""
+
+
+class Flow(BaseModel):
+    """The one-time values parked on the browser while it is at the provider."""
+
+    state: str
+    nonce: str
+    verifier: str
+
+
 def _b64(raw: bytes) -> str:
     return base64.urlsafe_b64encode(raw).rstrip(b"=").decode()
 
 
-def _claims(id_token: str) -> dict[str, Any]:
-    """The ID token's claims."""
+def _claims(id_token: str) -> Claims:
+    """The ID token's claims, checked for shape but not for signature."""
     payload = id_token.split(".")[1]
     padded = payload + "=" * (-len(payload) % 4)
-    decoded: dict[str, Any] = json.loads(base64.urlsafe_b64decode(padded))
 
-    return decoded
+    try:
+        return Claims.model_validate_json(base64.urlsafe_b64decode(padded))
+    except (ValidationError, ValueError) as error:
+        raise SignInError("the provider sent a token we cannot read") from error
 
 
 class Provider:
@@ -47,16 +90,20 @@ class Provider:
     def __init__(self, settings: Settings) -> None:
         """Hold the settings; the network happens on first use."""
         self._settings = settings
-        self._found: dict[str, Any] | None = None
+        self._found: Endpoints | None = None
 
-    async def _discovered(self, client: httpx2.AsyncClient) -> dict[str, Any]:
+    async def _discovered(self, client: httpx2.AsyncClient) -> Endpoints:
         if self._found is not None:
             return self._found
 
-        answer = await client.get(
-            f"{self._settings.oidc_issuer}/.well-known/openid-configuration"
-        )
-        found: dict[str, Any] = answer.json()
+        issuer = self._settings.oidc_issuer
+        answer = await client.get(f"{issuer}/.well-known/openid-configuration")
+        found = Endpoints.model_validate_json(answer.content)
+
+        for endpoint in (found.token_endpoint, found.userinfo_endpoint):
+            if not endpoint.startswith(f"{issuer}/"):
+                raise SignInError(f"the provider points {endpoint} off its own host")
+
         self._found = found
 
         return found
@@ -80,7 +127,7 @@ class Provider:
             code_challenge_method="S256",
         )
 
-        return f"{found['authorization_endpoint']}?{query}"
+        return f"{found.authorization_endpoint}?{query}"
 
     async def identify(self, code: str, verifier: str, nonce: str) -> tuple[str, str]:
         """Redeem the code and return the subject and email it stands for."""
@@ -89,7 +136,7 @@ class Provider:
         async with httpx2.AsyncClient(timeout=_TIMEOUT) as client:
             found = await self._discovered(client)
             answer = await client.post(
-                found["token_endpoint"],
+                found.token_endpoint,
                 data={
                     "grant_type": "authorization_code",
                     "code": code,
@@ -105,27 +152,32 @@ class Provider:
             if answer.status_code != 200:  # noqa: PLR2004
                 raise SignInError(f"the provider refused the code: {answer.text[:120]}")
 
-            tokens: dict[str, Any] = answer.json()
-            claims = _claims(str(tokens["id_token"]))
+            tokens = Tokens.model_validate_json(answer.content)
+            claims = _claims(tokens.id_token)
+            audience = claims.aud if isinstance(claims.aud, list) else [claims.aud]
 
-            if claims.get("iss") != settings.oidc_issuer:
+            if claims.iss != settings.oidc_issuer:
                 raise SignInError("the token came from another issuer")
 
-            if claims.get("nonce") != nonce:
+            if settings.oidc_client_id not in audience:
+                raise SignInError("the token was issued to another client")
+
+            if claims.exp <= int(time.time()):
+                raise SignInError("the token had already expired")
+
+            if claims.nonce != nonce:
                 raise SignInError("the token answers a different sign-in")
 
             who = await client.get(
-                found["userinfo_endpoint"],
-                headers={"Authorization": f"Bearer {tokens['access_token']}"},
+                found.userinfo_endpoint,
+                headers={"Authorization": f"Bearer {tokens.access_token}"},
             )
-            profile: dict[str, Any] = who.json()
+            profile = Profile.model_validate_json(who.content)
 
-        subject = str(profile.get("sub") or claims.get("sub") or "")
+        if profile.sub != claims.sub:
+            raise SignInError("the profile and the token name different people")
 
-        if not subject:
-            raise SignInError("the provider named no subject")
-
-        return subject, str(profile.get("email") or "")
+        return profile.sub, profile.email
 
 
 async def signed_in(request: Request, store: Store) -> SignedIn | None:
@@ -154,16 +206,17 @@ def start_flow(response: RedirectResponse, settings: Settings) -> tuple[str, str
     return state, nonce, challenge
 
 
-def flow(request: Request) -> dict[str, str]:
+def flow(request: Request) -> Flow:
     """What the browser was told to remember before it left."""
     parked = request.cookies.get(_FLOW_COOKIE)
 
     if not parked:
         raise SignInError("the sign-in took too long, or cookies are blocked")
 
-    remembered: dict[str, str] = json.loads(parked)
-
-    return remembered
+    try:
+        return Flow.model_validate_json(parked)
+    except ValidationError as error:
+        raise SignInError("the sign-in cookie is not one of ours") from error
 
 
 def keep_session(response: RedirectResponse, token: str, settings: Settings) -> None:
