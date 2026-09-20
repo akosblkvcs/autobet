@@ -57,7 +57,11 @@ class Settings(BaseSettings):
 
     http_host: str = "127.0.0.1"
     http_port: int = 8000
-    autobet_token: str = ""
+
+    oidc_issuer: str = ""
+    oidc_client_id: str = ""
+    oidc_client_secret: SecretStr = SecretStr("")
+    oidc_redirect_url: str = ""
 
     dry_run: bool = True
     stake: Decimal = Field(default=Decimal("100"), ge=100)

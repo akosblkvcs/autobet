@@ -9,6 +9,7 @@ from autobet.storage.bets import Bets
 from autobet.storage.events import Events
 from autobet.storage.migrate import apply_migrations
 from autobet.storage.reports import Reports
+from autobet.storage.users import Users
 
 
 class Store:
@@ -21,6 +22,7 @@ class Store:
         self.bets = Bets(pool)
         self.events = Events(pool)
         self.reports = Reports(pool)
+        self.users = Users(pool)
 
     @classmethod
     async def connect(cls, dsn: str) -> Store:

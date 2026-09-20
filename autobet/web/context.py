@@ -12,6 +12,7 @@ from autobet.models import utcnow
 from autobet.pipeline import PipelineState
 from autobet.storage import Store
 from autobet.telegram import Telegram
+from autobet.web.auth import Provider
 
 templates = Jinja2Templates(directory=str(Path(__file__).parent / "templates"))
 
@@ -24,6 +25,7 @@ class Context:
     store: Store
     state: PipelineState
     telegram: Telegram
+    provider: Provider
 
     def limits(self) -> dict[str, Any]:
         """The settings that decide whether a tip becomes a bet."""

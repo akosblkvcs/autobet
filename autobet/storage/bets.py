@@ -14,9 +14,6 @@ from autobet.models import (
 )
 from autobet.storage.rows import to_leg, to_message, to_resolution
 
-# The operator owns every bet until logins arrive; seeded by the schema.
-OPERATOR_EMAIL = "operator@autobet.local"
-
 _INSERT_SELECTION = """
     INSERT INTO selections (
         tip_leg_id, status, event_id, event_name, market_id, outcome_id,
@@ -103,18 +100,15 @@ class Bets:
         tip: Tip,
         result: BetResult,
     ) -> int:
-        """Write this user's verdict on the tip and return its id."""
+        """Write the verdict on the tip and return its bet id."""
         bet_id: int = await conn.fetchval(
             """
             INSERT INTO bets (
-                tip_id, user_id, state, refusal_code, refusal_detail,
+                tip_id, state, refusal_code, refusal_detail,
                 stake, odds, reference, placed_at, settlement
             )
-            VALUES (
-                $1, (SELECT id FROM users WHERE email = $2), $3, $4, $5,
-                $6, $7, $8, $9, $10
-            )
-            ON CONFLICT (tip_id, user_id) DO UPDATE SET
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+            ON CONFLICT (tip_id) WHERE user_id IS NULL DO UPDATE SET
                 state = EXCLUDED.state,
                 refusal_code = EXCLUDED.refusal_code,
                 refusal_detail = EXCLUDED.refusal_detail,
@@ -126,7 +120,6 @@ class Bets:
             RETURNING id
             """,
             tip_id,
-            OPERATOR_EMAIL,
             result.state,
             None if result.refusal is None else result.refusal.code,
             result.refusal.detail if result.refusal else result.error,

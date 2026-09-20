@@ -3,9 +3,9 @@
 # pyright: reportUnusedFunction=false
 
 from fastapi import APIRouter, Request
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, RedirectResponse, Response
 
-from autobet.web.auth import TOKEN_COOKIE, TOKEN_COOKIE_MAX_AGE, presented_token
+from autobet.web.auth import signed_in
 from autobet.web.context import Context, templates
 
 
@@ -14,16 +14,11 @@ def router(context: Context) -> APIRouter:
     api = APIRouter()
 
     @api.get("/", response_class=HTMLResponse)
-    async def index(request: Request) -> HTMLResponse:
-        token = presented_token(request, context.settings)
+    async def index(request: Request) -> Response:
+        session = await signed_in(request, context.store)
 
-        if token is None:
-            return templates.TemplateResponse(
-                request,
-                "forbidden.html",
-                {"token_configured": bool(context.settings.autobet_token)},
-                status_code=403,
-            )
+        if session is None:
+            return RedirectResponse("/auth/login", status_code=303)
 
         reports = context.store.reports
         latency = await reports.latency_percentiles()
@@ -38,15 +33,8 @@ def router(context: Context) -> APIRouter:
                 "limits": context.limits(),
                 "totals": await reports.totals() | {"transport_latency_ms": latency},
                 "rows": await context.store.bets.recent(50),
+                "session": session,
             },
-        )
-        response.set_cookie(
-            TOKEN_COOKIE,
-            token,
-            max_age=TOKEN_COOKIE_MAX_AGE,
-            httponly=True,
-            samesite="lax",
-            secure=context.settings.environment == "production",
         )
 
         return response
