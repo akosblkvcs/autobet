@@ -1,14 +1,23 @@
 CREATE TABLE users (
     id            bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
-    email         text        NOT NULL UNIQUE,
-    password_hash text        NOT NULL DEFAULT '',
+    subject       text UNIQUE,
+    email         text,
     role          text        NOT NULL DEFAULT 'user' CHECK (role IN ('admin', 'user')),
     status        text        NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'disabled')),
     created_at    timestamptz NOT NULL DEFAULT now(),
     last_login_at timestamptz
 );
 
-INSERT INTO users (email, role) VALUES ('operator@autobet.local', 'admin');
+CREATE TABLE sessions (
+    token_hash text PRIMARY KEY,
+    user_id    bigint      NOT NULL REFERENCES users (id) ON DELETE CASCADE,
+    csrf       text        NOT NULL,
+    created_at timestamptz NOT NULL DEFAULT now(),
+    expires_at timestamptz NOT NULL,
+    revoked_at timestamptz
+);
+
+CREATE INDEX sessions_user_idx ON sessions (user_id);
 
 CREATE TABLE channels (
     id         bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
@@ -74,7 +83,7 @@ CREATE TABLE selections (
 CREATE TABLE bets (
     id             bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     tip_id         bigint      NOT NULL REFERENCES tips (id) ON DELETE CASCADE,
-    user_id        bigint      NOT NULL REFERENCES users (id) ON DELETE CASCADE,
+    user_id        bigint      REFERENCES users (id) ON DELETE SET NULL,
     state          text        NOT NULL CHECK (state IN ('placed', 'refused', 'error')),
     refusal_code   text        CHECK (refusal_code IN (
                        'leg_unresolved', 'event_started', 'odds_drop', 'odds_rise',
@@ -95,6 +104,7 @@ CREATE TABLE bets (
     UNIQUE (tip_id, user_id)
 );
 
+CREATE UNIQUE INDEX bets_unowned_tip_idx ON bets (tip_id) WHERE user_id IS NULL;
 CREATE INDEX bets_placed_at_idx ON bets (placed_at DESC);
 CREATE INDEX bets_user_idx ON bets (user_id);
 

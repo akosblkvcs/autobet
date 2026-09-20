@@ -67,6 +67,36 @@ def utcnow() -> datetime:
     return datetime.now(UTC)
 
 
+class Role(StrEnum):
+    """What a signed-in person may do here. Authelia says who they are."""
+
+    ADMIN = "admin"
+    USER = "user"
+
+
+@dataclass(frozen=True, slots=True)
+class User:
+    """Someone the identity provider vouched for, as this app knows them."""
+
+    id: int
+    subject: str
+    email: str
+    role: Role
+
+    @property
+    def is_admin(self) -> bool:
+        """Whether this user may change settings and see everyone's bets."""
+        return self.role is Role.ADMIN
+
+
+@dataclass(frozen=True, slots=True)
+class SignedIn:
+    """An open session: who it belongs to, and the token its forms must carry."""
+
+    user: User
+    csrf: str
+
+
 @dataclass(frozen=True, slots=True)
 class IncomingMessage:
     """A single message as it reached us, whatever carried it."""

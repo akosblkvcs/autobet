@@ -3,7 +3,9 @@
 {% block title %}autobet{% endblock %}
 
 {% block body %}
-<h1>403</h1>
+<h1>Not signed in</h1>
 
-<p>Forbidden</p>
+<p>{{ reason }}</p>
+
+<p><a href="/auth/login">Try again</a></p>
 {% endblock %}

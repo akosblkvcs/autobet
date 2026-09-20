@@ -3,6 +3,8 @@
 {% block body %}
 <h1>autobet</h1>
 
+<p class="whoami quiet">{{ session.user.email or session.user.subject }}</p>
+
 {# A list renders one item per line, so several channels stay readable. #}
 {% macro stats(rows) %}
 <dl class="stats">
