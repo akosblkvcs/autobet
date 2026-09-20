@@ -3,6 +3,7 @@
 from collections.abc import AsyncIterator, Awaitable, Callable
 from dataclasses import dataclass, field
 from datetime import datetime
+from decimal import Decimal
 
 import structlog
 
@@ -40,7 +41,7 @@ async def run_pipeline(
     store: Store,
     state: PipelineState,
     bookmaker: Bookmaker,
-    parse: Callable[[IncomingMessage], Awaitable[Tip | None]],
+    parse: Callable[[IncomingMessage, Decimal], Awaitable[Tip | None]],
 ) -> None:
     """Consume one message stream: archive everything, bet on what parses.
 
@@ -49,7 +50,7 @@ async def run_pipeline(
         store: The archive every message is written to.
         state: Counters updated in place, read by the health endpoint.
         bookmaker: Where a parsed tip gets staked.
-        parse: Reads a message and returns a tip, or None if it is not one.
+        parse: Reads a message and stakes it, returning None if it is not a tip.
     """
     async for message in messages:
         is_new = await store.archive.add(message)
@@ -79,13 +80,14 @@ async def run_pipeline(
         recorded = False
 
         try:
-            tip = await parse(message)
+            policy = await store.config.policy()
+            tip = await parse(message, policy.stake)
 
             if tip is None:
                 continue
 
             state.tips += 1
-            result = await bookmaker.place(tip)
+            result = await bookmaker.place(tip, policy)
 
             await store.bets.record(tip, result)
             recorded = True

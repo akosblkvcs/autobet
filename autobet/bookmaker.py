@@ -19,12 +19,11 @@ from autobet.models import (
     Tip,
     utcnow,
 )
+from autobet.policy import Policy
 from autobet.session import mint_ce_session
 from autobet.storage import Store
 
 log = structlog.get_logger(__name__)
-
-_MISMATCH_RISE_PERCENT = 44.0
 
 
 def _priced(tip: Tip, offers: Sequence[LegOffer]) -> tuple[float, float | None]:
@@ -42,17 +41,17 @@ class Bookmaker:
         """Store the settings and build the index the tips are resolved against."""
         self._settings = settings
         self._dry_run = settings.dry_run
-        self._max_drop_percent = settings.max_odds_drop_percent
-        self._max_event_days_ahead = settings.max_event_days_ahead
-        self._forced = set(settings.telegram_force_chat_ids)
-        self._index = Index(settings, store)
+        self._store = store
+        self._index = Index(store)
 
-    async def place(self, tip: Tip) -> BetResult:
-        """Resolve every leg against the feed, then stake it."""
-        async with connected(self._settings) as connection:
-            return await self._placed(connection, tip)
+    async def place(self, tip: Tip, policy: Policy) -> BetResult:
+        """Resolve every leg against the feed, then stake it under these limits."""
+        async with connected(await self._store.books.config()) as connection:
+            return await self._placed(connection, tip, policy)
 
-    async def _placed(self, connection: Connection, tip: Tip) -> BetResult:
+    async def _placed(
+        self, connection: Connection, tip: Tip, policy: Policy
+    ) -> BetResult:
         """The work itself, on the socket opened for this tip."""
         resolutions = await self._index.resolve(connection, tip)
         offers = [resolution.offer for resolution in resolutions]
@@ -79,7 +78,7 @@ class Bookmaker:
             reference="dry-run" if self._dry_run else "",
             placed_at=utcnow(),
             resolutions=tuple(resolutions),
-            refusal=self._refuse(tip, offers),
+            refusal=self._refuse(tip, offers, policy),
         )
 
         if result.refusal is not None:
@@ -102,10 +101,16 @@ class Bookmaker:
 
             return result
 
-        await connection.authenticate(await mint_ce_session(self._settings))
+        await connection.authenticate(
+            await mint_ce_session(
+                await self._store.books.config(),
+                self._settings.book_username,
+                self._settings.book_password.get_secret_value(),
+            )
+        )
 
         repriced = await self._repriced(connection, offers)
-        moved = self._refuse(tip, repriced)
+        moved = self._refuse(tip, repriced, policy)
         restated = tuple(
             LegResolution(SelectionStatus.NO_ODDS)
             if offer is None and resolution.offer is not None
@@ -156,22 +161,21 @@ class Bookmaker:
             for offer in offers
         ]
 
-    def _refuse(self, tip: Tip, offers: list[LegOffer | None]) -> Refusal | None:
+    def _refuse(
+        self, tip: Tip, offers: list[LegOffer | None], policy: Policy
+    ) -> Refusal | None:
         """Say why this tip must not be staked, or None when it may be."""
-        mismatched = self._mismatched(tip, offers)
+        mismatched = self._mismatched(tip, offers, policy)
 
         if mismatched is not None:
             return mismatched
 
-        if tip.message.chat_id in self._forced:
-            log.info("checks_forced", chat=tip.message.chat_id)
+        return self._beyond_limits(tip, [o for o in offers if o is not None], policy)
 
-            return None
-
-        return self._beyond_limits(tip, [o for o in offers if o is not None])
-
-    def _mismatched(self, tip: Tip, offers: list[LegOffer | None]) -> Refusal | None:
-        """Signs this is not the bet the tipster sent. A forced chat waives none."""
+    def _mismatched(
+        self, tip: Tip, offers: list[LegOffer | None], policy: Policy
+    ) -> Refusal | None:
+        """Signs this is not the bet the tipster sent: correctness, not policy."""
         placeable = [offer for offer in offers if offer is not None]
 
         if len(placeable) != len(offers):
@@ -186,32 +190,27 @@ class Bookmaker:
 
         _, drop = _priced(tip, placeable)
 
-        if drop is not None and -drop > _MISMATCH_RISE_PERCENT:
+        if drop is not None and -drop > policy.mismatch_rise_percent:
             return Refusal(
                 RefusalCode.ODDS_RISE,
-                f"{-drop:.1f}% above the tipster, limit {_MISMATCH_RISE_PERCENT:.0f}%",
+                f"{-drop:.1f}% above the tipster, "
+                f"limit {policy.mismatch_rise_percent:.0f}%",
             )
 
         return None
 
-    def _beyond_limits(self, tip: Tip, offers: list[LegOffer]) -> Refusal | None:
-        """The policy limits, which a forced chat does waive."""
-        furthest = max(offer.days_ahead for offer in offers)
-
-        if furthest > self._max_event_days_ahead:
-            return Refusal(
-                RefusalCode.HORIZON,
-                f"{furthest:.1f} days away, limit {self._max_event_days_ahead}",
-            )
-
+    def _beyond_limits(
+        self, tip: Tip, offers: list[LegOffer], policy: Policy
+    ) -> Refusal | None:
+        """The limits a per-user setting will override in Phase C."""
         live, drop = _priced(tip, offers)
 
         if drop is None:
             log.info("odds_drop_unchecked", live=round(live, 3))
-        elif drop > self._max_drop_percent:
+        elif drop > policy.max_odds_drop_percent:
             return Refusal(
                 RefusalCode.ODDS_DROP,
-                f"{drop:.1f}%, limit {self._max_drop_percent:.0f}%",
+                f"{drop:.1f}%, limit {policy.max_odds_drop_percent:.0f}%",
             )
 
         return None

@@ -15,7 +15,6 @@ class RefusalCode(StrEnum):
     EVENT_STARTED = "event_started"
     ODDS_DROP = "odds_drop"
     ODDS_RISE = "odds_rise"
-    HORIZON = "horizon"
     INSUFFICIENT_BALANCE = "insufficient_balance"
     USER_PAUSED = "user_paused"
     DAILY_LOSS_LIMIT = "daily_loss_limit"

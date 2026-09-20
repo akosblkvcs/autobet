@@ -38,7 +38,7 @@ def router(context: Context) -> APIRouter:
                 "service": context.status()
                 | {"channels": list(context.telegram.channels)},
                 "index": await context.index(),
-                "limits": context.limits(),
+                "limits": await context.limits(),
                 "totals": await reports.totals() | {"transport_latency_ms": latency},
                 "rows": await context.store.bets.recent(50),
                 "session": session,

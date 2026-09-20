@@ -102,9 +102,9 @@ class _Slip(BaseModel):
     legs: list[_Leg]
 
 
-def build_claude(settings: Settings) -> AsyncAnthropic:
-    """Build a client for the Claude API, using the configured key."""
-    return AsyncAnthropic(api_key=settings.claude_api_key)
+def build_claude(api_key: str) -> AsyncAnthropic:
+    """Build a client for the Claude API, using the stored key."""
+    return AsyncAnthropic(api_key=api_key)
 
 
 def build_text_prompt(settings: Settings) -> str:
@@ -141,16 +141,17 @@ def _content(
 
 async def parse_tip(
     message: IncomingMessage,
-    claude: AsyncAnthropic,
     stake: Decimal,
+    *,
+    claude: AsyncAnthropic,
     text_prompt: str,
 ) -> Tip | None:
     """Extract a tip from a message's screenshot, or None if there is not one.
 
     Args:
         message: The archived message: its screenshot if it has one, else its text.
-        claude: Client used for the extraction.
         stake: What to stake, since the tip does not decide that.
+        claude: Client used for the extraction.
         text_prompt: The prompt for a text tip, from :func:`build_text_prompt`.
 
     Returns:

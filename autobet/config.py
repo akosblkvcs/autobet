@@ -1,10 +1,9 @@
 """Runtime configuration, loaded from the environment."""
 
-from decimal import Decimal
 from pathlib import Path
 from typing import Annotated, Literal
 
-from pydantic import BeforeValidator, Field, SecretStr, field_validator
+from pydantic import BeforeValidator, SecretStr, field_validator
 from pydantic_core.core_schema import ValidationInfo
 from pydantic_settings import BaseSettings, NoDecode
 
@@ -19,21 +18,11 @@ def _split(value: object) -> object:
     return value
 
 
-ChatIds = Annotated[tuple[int, ...], NoDecode, BeforeValidator(_split)]
 Emails = Annotated[tuple[str, ...], NoDecode, BeforeValidator(_split)]
 
 
 class Settings(BaseSettings):
     """Everything the app needs to run, sourced from environment variables."""
-
-    @field_validator("book_ws")
-    @classmethod
-    def _encrypted(cls, value: str) -> str:
-        """The betting session is sent on this socket, so it cannot be plaintext."""
-        if value and not value.startswith("wss://"):
-            raise ValueError("BOOK_WS must be a wss:// URL")
-
-        return value
 
     @field_validator("oidc_issuer")
     @classmethod
@@ -50,19 +39,6 @@ class Settings(BaseSettings):
     log_level: LogLevel = "INFO"
     data_dir: Path = Path("data")
 
-    telegram_api_id: int = 0
-    telegram_api_hash: str = ""
-    telegram_source_chat_ids: ChatIds = ()
-    telegram_force_chat_ids: ChatIds = ()
-
-    claude_api_key: str = ""
-
-    book_site: str = ""
-    book_api: str = ""
-    book_loader: str = ""
-    book_ws: str = ""
-    book_realm: str = ""
-    book_operator: str = ""
     book_username: str = ""
     book_password: SecretStr = SecretStr("")
 
@@ -78,9 +54,6 @@ class Settings(BaseSettings):
     admin_emails: Emails = ()
 
     dry_run: bool = True
-    stake: Decimal = Field(default=Decimal("100"), ge=100)
-    max_odds_drop_percent: float = Field(default=10.0, gt=0)
-    max_event_days_ahead: int = Field(default=7, gt=0)
 
     @property
     def telegram_session(self) -> Path:

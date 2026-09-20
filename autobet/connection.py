@@ -9,7 +9,7 @@ from typing import Any, cast
 import structlog
 from websockets.asyncio.client import ClientConnection, connect
 
-from autobet.config import Settings
+from autobet.books import Tippmixpro
 from autobet.models import LegOffer
 
 log = structlog.get_logger(__name__)
@@ -151,15 +151,15 @@ class Connection:
 
 
 @contextlib.asynccontextmanager
-async def connected(settings: Settings) -> AsyncGenerator[Connection]:
+async def connected(book: Tippmixpro) -> AsyncGenerator[Connection]:
     """Open a socket for one piece of work, and close it when the work ends."""
-    async with connect(settings.book_ws, max_size=None) as socket:
-        await socket.send(json.dumps([_WAMP_HELLO, settings.book_realm, _WAMP_ROLES]))
+    async with connect(book.ws, max_size=None) as socket:
+        await socket.send(json.dumps([_WAMP_HELLO, book.realm, _WAMP_ROLES]))
         await socket.recv()
 
         log.info("feed_connected")
 
         try:
-            yield Connection(socket, settings.book_operator)
+            yield Connection(socket, book.operator)
         finally:
             log.info("feed_closed")

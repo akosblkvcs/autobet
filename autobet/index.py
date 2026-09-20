@@ -9,7 +9,6 @@ from typing import Any
 
 import structlog
 
-from autobet.config import Settings
 from autobet.connection import Connection, connected
 from autobet.matching import IndexedEvent, find_event, indexed_event, pick_offer
 from autobet.models import LegResolution, SelectionStatus, Tip, TipLeg
@@ -30,14 +29,13 @@ def _upcoming(tournament: dict[str, Any]) -> int:
 class Index:
     """The stored board: walked by the scheduled task, read by every tip."""
 
-    def __init__(self, settings: Settings, store: Store) -> None:
+    def __init__(self, store: Store) -> None:
         """Hold what it takes to walk the board and to read what was walked."""
-        self._settings = settings
         self._store = store
 
     async def rebuild(self) -> int:
         """Walk every tournament of every sport and replace the stored index."""
-        async with connected(self._settings) as connection:
+        async with connected(await self._store.books.config()) as connection:
             sports = [
                 record["id"]
                 for record in await connection.dump(_DISCIPLINES_TOPIC)

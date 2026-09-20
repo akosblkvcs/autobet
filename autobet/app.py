@@ -39,14 +39,14 @@ def _stopping() -> asyncio.Event:
 async def run_service(settings: Settings) -> None:
     """Run the Telegram client, the bet placer and the control plane."""
     store = await Store.connect(settings.database_url)
+    integrations = await store.config.integrations()
     state = PipelineState()
-    telegram = Telegram(settings)
+    telegram = Telegram(settings, integrations, store)
     bookmaker = Bookmaker(settings, store)
-    claude = build_claude(settings)
+    claude = build_claude(integrations.claude_api_key)
     parse = partial(
         parse_tip,
         claude=claude,
-        stake=settings.stake,
         text_prompt=build_text_prompt(settings),
     )
 

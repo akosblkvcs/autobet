@@ -37,6 +37,15 @@ migrate:
 markets:
 	uv run python -m autobet markets
 
+config:
+	uv run python -m autobet config $(ARGS)
+
+book:
+	uv run python -m autobet book $(ARGS)
+
+channel:
+	uv run python -m autobet channel $(ARGS)
+
 index:
 	uv run python -m autobet index
 

@@ -19,6 +19,8 @@ from telethon.errors import (
 
 from autobet.config import Settings
 from autobet.models import IncomingMessage, utcnow
+from autobet.policy import Integrations
+from autobet.storage import Store
 
 log = structlog.get_logger(__name__)
 
@@ -40,12 +42,12 @@ _DEAD_SESSION_ERRORS = (
 )
 
 
-def build_client(settings: Settings) -> TelegramClient:
+def build_client(settings: Settings, identity: Integrations) -> TelegramClient:
     """Construct a Telethon client pointed at the persistent session file."""
     return TelegramClient(
         str(settings.telegram_session),
-        settings.telegram_api_id,
-        settings.telegram_api_hash,
+        identity.telegram_api_id,
+        identity.telegram_api_hash,
     )
 
 
@@ -76,19 +78,16 @@ def message_id(chat_id: int, telegram_message_id: int) -> str:
 class Telegram:
     """Yields messages from the watched chats, in arrival order."""
 
-    def __init__(self, settings: Settings) -> None:
+    def __init__(self, settings: Settings, identity: Integrations, store: Store) -> None:
         """Build the client and subscribe; no network happens until ``start``."""
         self._settings = settings
-        chats = list(settings.telegram_source_chat_ids)
+        self._store = store
         self._queue: asyncio.Queue[IncomingMessage] = asyncio.Queue()
         self._named: dict[int, str] = {}
-        self._client = build_client(settings)
+        self._client = build_client(settings, identity)
         settings.telegram_media_dir.mkdir(parents=True, exist_ok=True)
 
-        if chats:
-            self._client.add_event_handler(
-                self._on_message, events.NewMessage(chats=chats)
-            )
+        self._client.add_event_handler(self._on_message, events.NewMessage())
 
     async def start(self) -> None:
         """Connect with the stored session, name the watched chats, and listen."""
@@ -97,7 +96,7 @@ class Telegram:
 
         self._named = {
             chat: await self._name_of(chat)
-            for chat in self._settings.telegram_source_chat_ids
+            for chat in await self._store.archive.enabled_chats()
         }
 
         log.info("telegram_connected", watching=self.channels)
@@ -130,6 +129,13 @@ class Telegram:
     async def _on_message(self, event: Any) -> None:
         received_at = utcnow()
         chat_id = int(event.chat_id)
+
+        if not await self._store.archive.is_watched(chat_id):
+            return
+
+        if chat_id not in self._named:
+            self._named[chat_id] = await self._name_of(chat_id)
+
         media_path = (
             await event.message.download_media(
                 file=str(
