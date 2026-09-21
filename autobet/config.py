@@ -39,8 +39,7 @@ class Settings(BaseSettings):
     log_level: LogLevel = "INFO"
     data_dir: Path = Path("data")
 
-    book_username: str = ""
-    book_password: SecretStr = SecretStr("")
+    encryption_key: str = ""
 
     database_url: str = "postgresql://postgres:postgres@localhost:5432/autobet"
 

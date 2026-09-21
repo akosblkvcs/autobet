@@ -6,6 +6,7 @@ from dataclasses import replace
 
 import structlog
 
+from autobet.books import TIPPMIXPRO
 from autobet.config import Settings
 from autobet.connection import Connection, connected
 from autobet.index import Index
@@ -20,7 +21,7 @@ from autobet.models import (
     utcnow,
 )
 from autobet.policy import Policy
-from autobet.session import mint_ce_session
+from autobet.session import SessionError, mint_ce_session
 from autobet.storage import Store
 
 log = structlog.get_logger(__name__)
@@ -101,13 +102,7 @@ class Bookmaker:
 
             return result
 
-        await connection.authenticate(
-            await mint_ce_session(
-                await self._store.books.config(),
-                self._settings.book_username,
-                self._settings.book_password.get_secret_value(),
-            )
-        )
+        await connection.authenticate(await self._minted())
 
         repriced = await self._repriced(connection, offers)
         moved = self._refuse(tip, repriced, policy)
@@ -160,6 +155,20 @@ class Bookmaker:
             else None
             for offer in offers
         ]
+
+    async def _minted(self) -> str:
+        """A betting session for the account this tip is staked through."""
+        accounts = await self._store.accounts.active(TIPPMIXPRO)
+
+        if not accounts:
+            raise SessionError(
+                "no bookmaker account is configured",
+                "add one with `python -m autobet account add <email>`",
+            )
+
+        username, password = await self._store.accounts.credentials(accounts[0].id)
+
+        return await mint_ce_session(await self._store.books.config(), username, password)
 
     def _refuse(
         self, tip: Tip, offers: list[LegOffer | None], policy: Policy

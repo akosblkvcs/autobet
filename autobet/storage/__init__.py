@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from asyncpg import Pool, create_pool
 
+from autobet.storage.accounts import Accounts
 from autobet.storage.archive import Archive
 from autobet.storage.bets import Bets
 from autobet.storage.books import Books
@@ -17,9 +18,10 @@ from autobet.storage.users import Users
 class Store:
     """The pool every repository shares, and the repositories themselves."""
 
-    def __init__(self, pool: Pool) -> None:
+    def __init__(self, pool: Pool, key: str = "") -> None:
         """Wrap an open pool; use :meth:`connect` rather than calling this."""
         self._pool = pool
+        self.accounts = Accounts(pool, key)
         self.archive = Archive(pool)
         self.bets = Bets(pool)
         self.books = Books(pool)
@@ -29,14 +31,14 @@ class Store:
         self.users = Users(pool)
 
     @classmethod
-    async def connect(cls, dsn: str) -> Store:
+    async def connect(cls, dsn: str, key: str = "") -> Store:
         """Open the pool and bring the schema up to date."""
         pool = await create_pool(
             dsn, min_size=1, max_size=5, max_inactive_connection_lifetime=300
         )
         await apply_migrations(pool)
 
-        return cls(pool)
+        return cls(pool, key)
 
     async def close(self) -> None:
         """Close the pool, and with it every repository."""

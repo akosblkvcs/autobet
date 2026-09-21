@@ -40,6 +40,9 @@ markets:
 config:
 	uv run python -m autobet config $(ARGS)
 
+account:
+	uv run python -m autobet account $(ARGS)
+
 book:
 	uv run python -m autobet book $(ARGS)
 

@@ -5,12 +5,13 @@
 
 import argparse
 import asyncio
+from getpass import getpass
 
 import structlog
 
 from autobet import markets
 from autobet.app import run_service
-from autobet.books import Tippmixpro
+from autobet.books import TIPPMIXPRO, Tippmixpro
 from autobet.config import Settings, load_settings
 from autobet.connection import connected
 from autobet.index import Index
@@ -46,6 +47,10 @@ def build_parser() -> argparse.ArgumentParser:
     arming = book.add_mutually_exclusive_group()
     arming.add_argument("--enable", action="store_true")
     arming.add_argument("--disable", action="store_true")
+
+    account = sub.add_parser("account")
+    account.add_argument("action", nargs="?", choices=("add", "forget"))
+    account.add_argument("email", nargs="?")
 
     channel = sub.add_parser("channel")
     channel.add_argument("action", nargs="?", choices=("enable", "disable"))
@@ -140,6 +145,36 @@ async def cmd_book(
     await store.close()
 
 
+async def cmd_account(settings: Settings, action: str | None, email: str | None) -> None:
+    """List the accounts tips are staked through, or add and remove one."""
+    store = await Store.connect(settings.database_url, settings.encryption_key)
+
+    if action is not None and email is not None:
+        user = await store.users.by_email(email)
+
+        if user is None:
+            print(f"nobody signs in as {email}")
+
+            await store.close()
+
+            return
+
+        if action == "add":
+            await store.accounts.put(
+                user.id, TIPPMIXPRO, input("username: "), getpass("password: ")
+            )
+        else:
+            await store.accounts.forget(user.id, TIPPMIXPRO)
+
+    for account in await store.accounts.all(TIPPMIXPRO):
+        user = await store.users.by_id(account.user_id)
+        print(
+            f"{(user.email if user else '?'):<28} {account.username:<20} {account.status}"
+        )
+
+    await store.close()
+
+
 async def cmd_channel(
     settings: Settings, action: str | None, chat_id: int | None
 ) -> None:
@@ -221,6 +256,8 @@ def main(argv: list[str] | None = None) -> int:
                 asyncio.run(
                     cmd_book(settings, args.key, args.value, args.enable, args.disable)
                 )
+            case "account":
+                asyncio.run(cmd_account(settings, args.action, args.email))
             case "channel":
                 asyncio.run(cmd_channel(settings, args.action, args.chat_id))
             case _:

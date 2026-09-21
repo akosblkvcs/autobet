@@ -84,6 +84,22 @@ class Users:
             for row in rows
         ]
 
+    async def by_id(self, user_id: int) -> User | None:
+        """The user this id belongs to, or None."""
+        row = await self._pool.fetchrow(
+            "SELECT id, subject, email, role FROM users WHERE id = $1", user_id
+        )
+
+        return None if row is None else _to_user(row)
+
+    async def by_email(self, email: str) -> User | None:
+        """The user who signs in with this address, or None."""
+        row = await self._pool.fetchrow(
+            "SELECT id, subject, email, role FROM users WHERE email = $1", email
+        )
+
+        return None if row is None else _to_user(row)
+
     async def set_status(self, user_id: int, active: bool) -> None:
         """Let someone in, or end their access now."""
         async with self._pool.acquire() as conn, conn.transaction():
