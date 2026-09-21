@@ -9,7 +9,7 @@ from fastapi import APIRouter, Form, Request
 from fastapi.responses import HTMLResponse, RedirectResponse, Response
 from pydantic import BaseModel, ValidationError
 
-from autobet.books import TIPPMIXPRO, Tippmixpro
+from autobet.books import Tippmixpro
 from autobet.models import SignedIn
 from autobet.policy import SECRETS
 from autobet.storage import Store
@@ -114,12 +114,8 @@ def router(context: Context) -> APIRouter:
         if not value:
             return _back()
 
-        detail: dict[str, JsonValue] = {} if key in SECRETS else {"value": value}
-
         try:
-            async with store.transaction() as tx:
-                await store.config.put(key, value, who.user.id, tx)
-                await store.audit.record(who.user.id, "settings.put", key, detail, tx)
+            await store.config.put(key, value, who.user.id)
         except (ValidationError, ValueError) as refused:
             return await _page(request, context, who, _reason(refused))
 
@@ -135,11 +131,7 @@ def router(context: Context) -> APIRouter:
             return who
 
         try:
-            async with store.transaction() as tx:
-                await store.books.put(key, value, TIPPMIXPRO, tx)
-                await store.audit.record(
-                    who.user.id, "bookmakers.put", key, {"value": value}, tx
-                )
+            await store.books.put(key, value)
         except (ValidationError, ValueError) as refused:
             return await _page(request, context, who, _reason(refused))
 
@@ -152,9 +144,7 @@ def router(context: Context) -> APIRouter:
         if isinstance(who, Response):
             return who
 
-        async with store.transaction() as tx:
-            await store.books.enable(True, TIPPMIXPRO, tx)
-            await store.audit.record(who.user.id, "bookmakers.enable", TIPPMIXPRO, {}, tx)
+        await store.books.enable(True)
 
         return _back()
 
@@ -167,15 +157,10 @@ def router(context: Context) -> APIRouter:
         if isinstance(who, Response):
             return who
 
-        async with store.transaction() as tx:
-            if enabled == "true":
-                await store.archive.watch(int(chat_id), tx)
-            else:
-                await store.archive.unwatch(int(chat_id), tx)
-
-            await store.audit.record(
-                who.user.id, "channels.enable", chat_id, {"enabled": enabled}, tx
-            )
+        if enabled == "true":
+            await store.archive.watch(int(chat_id))
+        else:
+            await store.archive.unwatch(int(chat_id))
 
         return _back()
 
@@ -193,11 +178,7 @@ def router(context: Context) -> APIRouter:
                 request, context, who, "disabling yourself would lock you out"
             )
 
-        async with store.transaction() as tx:
-            await store.users.set_status(int(user_id), active == "true", tx)
-            await store.audit.record(
-                who.user.id, "users.status", user_id, {"active": active}, tx
-            )
+        await store.users.set_status(int(user_id), active == "true")
 
         return _back()
 

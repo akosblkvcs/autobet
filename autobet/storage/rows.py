@@ -1,7 +1,5 @@
 """Rows as the domain wants them: one converter per table."""
 
-from typing import Protocol
-
 from asyncpg import Record
 
 from autobet.matching import IndexedEvent
@@ -14,28 +12,6 @@ from autobet.models import (
 )
 
 type JsonValue = str | int | float | bool | None | list[JsonValue] | dict[str, JsonValue]
-
-
-class Executes(Protocol):
-    """Anything a query can run on: the pool, or a connection in a transaction."""
-
-    async def execute(
-        self, query: str, *args: object, timeout: float | None = None
-    ) -> str:
-        """Run one statement."""
-        ...
-
-    async def fetch(
-        self, query: str, *args: object, timeout: float | None = None
-    ) -> list[Record]:
-        """Every row one query answers."""
-        ...
-
-    async def fetchrow(
-        self, query: str, *args: object, timeout: float | None = None
-    ) -> Record | None:
-        """The first row one query answers, or None."""
-        ...
 
 
 def to_message(row: Record) -> IncomingMessage:

@@ -8,10 +8,8 @@ from asyncpg import Pool
 from pydantic import BaseModel
 
 from autobet.policy import Integrations, Policy
-from autobet.storage.rows import Executes, JsonValue
+from autobet.storage.rows import JsonValue
 
-# Every model over this one table. A key belongs to exactly one of them, and
-# that model is what validates it.
 MODELS: tuple[type[BaseModel], ...] = (Policy, Integrations)
 
 
@@ -31,11 +29,9 @@ class Config:
         """Wrap an open pool; :class:`autobet.storage.Store` owns it."""
         self._pool = pool
 
-    async def stored(self, conn: Executes | None = None) -> dict[str, JsonValue]:
+    async def stored(self) -> dict[str, JsonValue]:
         """Only what somebody has set, so a page can say what was changed."""
-        rows = await (conn or self._pool).fetch(
-            "SELECT key, value FROM settings ORDER BY key"
-        )
+        rows = await self._pool.fetch("SELECT key, value FROM settings ORDER BY key")
         known = {name for model in MODELS for name in model.model_fields}
 
         return {
@@ -55,16 +51,13 @@ class Config:
         key: str,
         value: JsonValue,
         actor_id: int | None = None,
-        conn: Executes | None = None,
     ) -> None:
         """Store one value, after the owning model has validated the result."""
         model = owner(key)
-        current = model.model_validate(await self._for(model, conn)).model_dump(
-            mode="json"
-        )
+        current = model.model_validate(await self._for(model)).model_dump(mode="json")
         validated = model.model_validate(current | {key: value})
 
-        await (conn or self._pool).execute(
+        await self._pool.execute(
             """
             INSERT INTO settings (key, value, updated_by) VALUES ($1, $2::jsonb, $3)
             ON CONFLICT (key) DO UPDATE SET value = excluded.value,
@@ -76,10 +69,8 @@ class Config:
             actor_id,
         )
 
-    async def _for(
-        self, model: type[BaseModel], conn: Executes | None = None
-    ) -> dict[str, JsonValue]:
+    async def _for(self, model: type[BaseModel]) -> dict[str, JsonValue]:
         """The stored values this model owns."""
-        stored = await self.stored(conn)
+        stored = await self.stored()
 
         return {key: stored[key] for key in model.model_fields if key in stored}
