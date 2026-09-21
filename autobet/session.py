@@ -50,6 +50,7 @@ async def mint_ce_session(book: Tippmixpro, username: str, password: str) -> str
                 "username": username,
                 "password": password,
             },
+            follow_redirects=False,
         )
         if signed_in.status_code != _OK:
             raise SessionError(

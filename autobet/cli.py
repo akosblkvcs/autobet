@@ -15,6 +15,7 @@ from autobet.config import Settings, load_settings
 from autobet.connection import connected
 from autobet.index import Index
 from autobet.logging import configure_logging
+from autobet.policy import SECRETS
 from autobet.storage import Store
 from autobet.storage.config import MODELS
 from autobet.telegram import SessionError, build_client, connect_authorized
@@ -37,10 +38,13 @@ def build_parser() -> argparse.ArgumentParser:
     config = sub.add_parser("config")
     config.add_argument("key", nargs="?")
     config.add_argument("value", nargs="?")
+    config.add_argument("--reveal", action="store_true")
 
     book = sub.add_parser("book")
     book.add_argument("key", nargs="?")
     book.add_argument("value", nargs="?")
+    book.add_argument("--enable", action="store_true")
+    book.add_argument("--disable", action="store_true")
 
     channel = sub.add_parser("channel")
     channel.add_argument("action", nargs="?", choices=("enable", "disable"))
@@ -83,8 +87,10 @@ async def cmd_migrate(settings: Settings) -> None:
     await store.close()
 
 
-async def cmd_config(settings: Settings, key: str | None, value: str | None) -> None:
-    """Show the stored limits, or set one of them."""
+async def cmd_config(
+    settings: Settings, key: str | None, value: str | None, reveal: bool
+) -> None:
+    """Show the stored configuration, or set one value."""
     store = await Store.connect(settings.database_url)
 
     if key is not None and value is not None:
@@ -93,31 +99,42 @@ async def cmd_config(settings: Settings, key: str | None, value: str | None) -> 
     stored = await store.config.stored()
 
     for model in MODELS:
-        values = model.model_validate(
-            {key: stored[key] for key in model.model_fields if key in stored}
+        held = model.model_validate(
+            {name: stored[name] for name in model.model_fields if name in stored}
         )
 
         for name, field in model.model_fields.items():
             source = "stored" if name in stored else "default"
-            value = str(getattr(values, name))
-            print(f"{name:<22} {value:<14} {source:<8} {field.description}")
+            shown = str(getattr(held, name))
+
+            if name in SECRETS and not reveal:
+                shown = "configured" if shown else "not configured"
+
+            print(f"{name:<22} {shown:<16} {source:<8} {field.description}")
 
     await store.close()
 
 
-async def cmd_book(settings: Settings, key: str | None, value: str | None) -> None:
-    """Show the book's endpoints, or set one of them."""
+async def cmd_book(
+    settings: Settings, key: str | None, value: str | None, enable: bool, disable: bool
+) -> None:
+    """Show the book's endpoints, set one, or let the book be used."""
     store = await Store.connect(settings.database_url)
 
     if key is not None and value is not None:
         await store.books.put(key, value)
 
+    if enable or disable:
+        await store.books.enable(enable)
+
     stored = await store.books.stored()
-    config = await store.books.config()
 
     for name, field in Tippmixpro.model_fields.items():
         source = "stored" if name in stored else "default"
-        print(f"{name:<10} {getattr(config, name):<44} {source:<8} {field.description}")
+        shown = str(stored.get(name, ""))
+        print(f"{name:<10} {shown:<44} {source:<8} {field.description}")
+
+    print(f"enabled    {await store.books.enabled()}")
 
     await store.close()
 
@@ -190,9 +207,11 @@ def main(argv: list[str] | None = None) -> int:
             case "index":
                 asyncio.run(cmd_index(settings))
             case "config":
-                asyncio.run(cmd_config(settings, args.key, args.value))
+                asyncio.run(cmd_config(settings, args.key, args.value, args.reveal))
             case "book":
-                asyncio.run(cmd_book(settings, args.key, args.value))
+                asyncio.run(
+                    cmd_book(settings, args.key, args.value, args.enable, args.disable)
+                )
             case "channel":
                 asyncio.run(cmd_channel(settings, args.action, args.chat_id))
             case _:

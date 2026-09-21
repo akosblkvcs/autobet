@@ -30,3 +30,12 @@ class Tippmixpro(BaseModel):
             raise ValueError("ws must be a wss:// URL")
 
         return value
+
+    @field_validator("site", "api", "loader")
+    @classmethod
+    def _over_tls(cls, value: str) -> str:
+        """The password goes to `api` and session material to `loader`."""
+        if value and not value.startswith("https://"):
+            raise ValueError("must be an https:// URL")
+
+        return value

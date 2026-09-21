@@ -3,12 +3,12 @@
 from __future__ import annotations
 
 import json
-from typing import Any
 
 from asyncpg import Pool
 from pydantic import BaseModel
 
 from autobet.policy import Integrations, Policy
+from autobet.storage.rows import JsonValue
 
 # Every model over this one table. A key belongs to exactly one of them, and
 # that model is what validates it.
@@ -31,7 +31,7 @@ class Config:
         """Wrap an open pool; :class:`autobet.storage.Store` owns it."""
         self._pool = pool
 
-    async def stored(self) -> dict[str, Any]:
+    async def stored(self) -> dict[str, JsonValue]:
         """Only what somebody has set, so a page can say what was changed."""
         rows = await self._pool.fetch("SELECT key, value FROM settings ORDER BY key")
         known = {name for model in MODELS for name in model.model_fields}
@@ -48,7 +48,7 @@ class Config:
         """The keys the service connects with, read once at startup."""
         return Integrations.model_validate(await self._for(Integrations))
 
-    async def put(self, key: str, value: Any, actor_id: int | None = None) -> None:
+    async def put(self, key: str, value: JsonValue, actor_id: int | None = None) -> None:
         """Store one value, after the owning model has validated the result."""
         model = owner(key)
         current = model.model_validate(await self._for(model)).model_dump(mode="json")
@@ -66,7 +66,7 @@ class Config:
             actor_id,
         )
 
-    async def _for(self, model: type[BaseModel]) -> dict[str, Any]:
+    async def _for(self, model: type[BaseModel]) -> dict[str, JsonValue]:
         """The stored values this model owns."""
         stored = await self.stored()
 

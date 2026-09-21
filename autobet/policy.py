@@ -27,6 +27,9 @@ class Policy(BaseModel):
     )
 
 
+SECRETS = frozenset({"telegram_api_hash", "claude_api_key"})
+
+
 class Integrations(BaseModel):
     """The keys the service itself holds, read at startup and admin-editable."""
 

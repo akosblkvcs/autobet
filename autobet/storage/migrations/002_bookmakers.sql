@@ -7,4 +7,5 @@ CREATE TABLE bookmakers (
     created_at timestamptz NOT NULL DEFAULT now()
 );
 
-INSERT INTO bookmakers (slug, name) VALUES ('tippmixpro', 'tippmixpro.hu');
+INSERT INTO bookmakers (slug, name, enabled)
+VALUES ('tippmixpro', 'tippmixpro.hu', false);
