@@ -20,8 +20,8 @@ class Policy(BaseModel):
         gt=0,
         description="Abandon the bet when the live price fell this far below the tip.",
     )
-    mismatch_rise_percent: float = Field(
-        default=44.0,
+    mismatch_rise_percent: int = Field(
+        default=50,
         gt=0,
         description="A price this far above the tip is a different bet, not a bargain.",
     )

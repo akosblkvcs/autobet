@@ -193,8 +193,7 @@ class Bookmaker:
         if drop is not None and -drop > policy.mismatch_rise_percent:
             return Refusal(
                 RefusalCode.ODDS_RISE,
-                f"{-drop:.1f}% above the tipster, "
-                f"limit {policy.mismatch_rise_percent:.0f}%",
+                f"{-drop:.1f}% above the tipster, limit {policy.mismatch_rise_percent}%",
             )
 
         return None

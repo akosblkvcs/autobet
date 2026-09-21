@@ -14,7 +14,7 @@ from autobet.books import Tippmixpro
 from autobet.config import Settings, load_settings
 from autobet.connection import connected
 from autobet.index import Index
-from autobet.logging import configure_logging
+from autobet.logs import configure_logging
 from autobet.policy import SECRETS
 from autobet.storage import Store
 from autobet.storage.config import MODELS
