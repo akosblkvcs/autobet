@@ -1,7 +1,16 @@
 <!doctype html>
+<html lang="en">
 
 <meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
 <title>{% block title %}autobet{% endblock %}</title>
 <link rel="stylesheet" href="/static/style.css">
 
-{% block body %}{% endblock %}
+<header class="bar">
+  <span class="brand">autobet</span>
+  {% if session is defined and session %}
+  <span class="who quiet">{{ session.user.email or session.user.subject }}</span>
+  {% endif %}
+</header>
+
+<main>{% block body %}{% endblock %}</main>
