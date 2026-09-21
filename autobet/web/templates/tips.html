@@ -1,0 +1,5 @@
+{% extends "base.html" %}
+
+{% block body %}
+{% if rows %}{% include "_tips.html" %}{% else %}<p class="quiet">None yet.</p>{% endif %}
+{% endblock %}

@@ -162,7 +162,7 @@ class Bets:
         return selection_id
 
     async def recent(self, limit: int = 50) -> list[MessageWithTip]:
-        """The most recent tips with their legs and outcome, newest first."""
+        """The most recent tips that reached a verdict, newest first."""
         rows = await self._pool.fetch(
             """
             SELECT m.external_id, c.title AS channel, m.sent_at, m.received_at,
@@ -174,6 +174,7 @@ class Bets:
             JOIN messages m ON m.id = t.message_id
             JOIN channels c ON c.id = m.channel_id
             LEFT JOIN bets b ON b.tip_id = t.id
+            WHERE b.id IS NOT NULL
             ORDER BY m.received_at DESC
             LIMIT $1
             """,

@@ -89,6 +89,15 @@ class User:
 
 
 @dataclass(frozen=True, slots=True)
+class Person:
+    """A user as the admin page lists them: who, and whether they may in."""
+
+    user: User
+    status: str
+    last_login_at: datetime | None
+
+
+@dataclass(frozen=True, slots=True)
 class SignedIn:
     """An open session: who it belongs to, and the token its forms must carry."""
 

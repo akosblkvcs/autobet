@@ -2,15 +2,20 @@
 
 from __future__ import annotations
 
+from collections.abc import AsyncGenerator
+from contextlib import asynccontextmanager
+
 from asyncpg import Pool, create_pool
 
 from autobet.storage.archive import Archive
+from autobet.storage.audit import Audit
 from autobet.storage.bets import Bets
 from autobet.storage.books import Books
 from autobet.storage.config import Config
 from autobet.storage.events import Events
 from autobet.storage.migrate import apply_migrations
 from autobet.storage.reports import Reports
+from autobet.storage.rows import Executes
 from autobet.storage.users import Users
 
 
@@ -21,12 +26,19 @@ class Store:
         """Wrap an open pool; use :meth:`connect` rather than calling this."""
         self._pool = pool
         self.archive = Archive(pool)
+        self.audit = Audit(pool)
         self.bets = Bets(pool)
         self.books = Books(pool)
         self.config = Config(pool)
         self.events = Events(pool)
         self.reports = Reports(pool)
         self.users = Users(pool)
+
+    @asynccontextmanager
+    async def transaction(self) -> AsyncGenerator[Executes]:
+        """One connection in one transaction, for callers that must land together."""
+        async with self._pool.acquire() as conn, conn.transaction():
+            yield conn
 
     @classmethod
     async def connect(cls, dsn: str) -> Store:

@@ -1,0 +1,69 @@
+{% extends "base.html" %}
+
+{% macro row(action, field) %}
+<form class="inline" method="post" action="{{ action }}">
+  <input type="hidden" name="csrf" value="{{ session.csrf }}">
+  <input type="hidden" name="key" value="{{ field.name }}">
+  <label>{{ field.name.replace("_", " ") }}
+    <input name="value" value="{{ field.value }}" autocapitalize="off" autocomplete="off"
+           spellcheck="false" title="{{ field.description }}"
+           {% if field.secret %}type="password"
+           placeholder="{{ 'configured' if field.set else 'not configured' }}"{% endif %}>
+  </label>
+  <button type="submit">Set</button>
+</form>
+{% endmacro %}
+
+{% block body %}
+{% if error %}<p class="error">{{ error }}</p>{% endif %}
+
+<h2>Limits</h2>
+{% for field in limits %}{{ row("/admin/setting", field) }}{% endfor %}
+
+<h2>Keys <abbr title="Read at startup, so a change here needs a restart. A blank field keeps what is stored.">*</abbr></h2>
+{% for field in keys %}{{ row("/admin/setting", field) }}{% endfor %}
+
+<h2>Book</h2>
+<p class="quiet">tippmixpro &middot; {{ "enabled" if book_enabled else "not enabled" }}</p>
+{% if not book_enabled %}
+<form class="inline" method="post" action="/admin/book/enable">
+  <input type="hidden" name="csrf" value="{{ session.csrf }}">
+  <button type="submit">Enable book</button>
+</form>
+{% endif %}
+{% for field in book %}{{ row("/admin/book", field) }}{% endfor %}
+
+<h2>Channels</h2>
+<ul class="rows plain">
+  {% for chat_id, title, enabled in channels %}
+  <li>
+    <form class="inline" method="post" action="/admin/channel">
+      <input type="hidden" name="csrf" value="{{ session.csrf }}">
+      <input type="hidden" name="chat_id" value="{{ chat_id }}">
+      <input type="hidden" name="enabled" value="{{ "false" if enabled else "true" }}">
+      <span class="name">{{ title }}</span>
+      <span class="quiet">{{ chat_id }}</span>
+      <button type="submit">{{ "Disable" if enabled else "Enable" }}</button>
+    </form>
+  </li>
+  {% endfor %}
+</ul>
+
+<h2>People</h2>
+<ul class="rows plain">
+  {% for person in people %}
+  <li>
+    <form class="inline" method="post" action="/admin/user">
+      <input type="hidden" name="csrf" value="{{ session.csrf }}">
+      <input type="hidden" name="user_id" value="{{ person.user.id }}">
+      <input type="hidden" name="active" value="{{ "false" if person.status == "active" else "true" }}">
+      <span class="name">{{ person.user.email or person.user.subject }}</span>
+      <span class="quiet">{{ person.user.role }} &middot; {{ person.status }}</span>
+      {% if person.user.id != session.user.id %}
+      <button type="submit">{{ "Disable" if person.status == "active" else "Enable" }}</button>
+      {% endif %}
+    </form>
+  </li>
+  {% endfor %}
+</ul>
+{% endblock %}

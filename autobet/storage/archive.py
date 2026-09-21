@@ -3,6 +3,7 @@
 from asyncpg import Pool
 
 from autobet.models import IncomingMessage
+from autobet.storage.rows import Executes
 
 
 class Archive:
@@ -36,9 +37,9 @@ class Archive:
 
         return [(row["chat_id"], row["title"], row["enabled"]) for row in rows]
 
-    async def watch(self, chat_id: int) -> None:
+    async def watch(self, chat_id: int, conn: Executes | None = None) -> None:
         """Start listening to a chat, adding it if it is new."""
-        await self._pool.execute(
+        await (conn or self._pool).execute(
             """
             INSERT INTO channels (chat_id, title) VALUES ($1, $2)
             ON CONFLICT (chat_id) DO UPDATE SET enabled = true
@@ -47,9 +48,9 @@ class Archive:
             str(chat_id),
         )
 
-    async def unwatch(self, chat_id: int) -> None:
+    async def unwatch(self, chat_id: int, conn: Executes | None = None) -> None:
         """Stop listening to a chat."""
-        await self._pool.execute(
+        await (conn or self._pool).execute(
             "UPDATE channels SET enabled = false WHERE chat_id = $1", chat_id
         )
 
