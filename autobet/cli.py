@@ -43,8 +43,9 @@ def build_parser() -> argparse.ArgumentParser:
     book = sub.add_parser("book")
     book.add_argument("key", nargs="?")
     book.add_argument("value", nargs="?")
-    book.add_argument("--enable", action="store_true")
-    book.add_argument("--disable", action="store_true")
+    arming = book.add_mutually_exclusive_group()
+    arming.add_argument("--enable", action="store_true")
+    arming.add_argument("--disable", action="store_true")
 
     channel = sub.add_parser("channel")
     channel.add_argument("action", nargs="?", choices=("enable", "disable"))
