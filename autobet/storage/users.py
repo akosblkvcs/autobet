@@ -92,13 +92,14 @@ class Users:
 
         return None if row is None else _to_user(row)
 
-    async def by_email(self, email: str) -> User | None:
-        """The user who signs in with this address, or None."""
-        row = await self._pool.fetchrow(
-            "SELECT id, subject, email, role FROM users WHERE email = $1", email
+    async def matching(self, email: str) -> list[User]:
+        """Everyone who signs in with this address."""
+        rows = await self._pool.fetch(
+            "SELECT id, subject, email, role FROM users WHERE email = $1 ORDER BY id",
+            email,
         )
 
-        return None if row is None else _to_user(row)
+        return [_to_user(row) for row in rows]
 
     async def set_status(self, user_id: int, active: bool) -> None:
         """Let someone in, or end their access now."""

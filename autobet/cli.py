@@ -16,6 +16,7 @@ from autobet.config import Settings, load_settings
 from autobet.connection import connected
 from autobet.index import Index
 from autobet.logs import configure_logging
+from autobet.models import User
 from autobet.policy import SECRETS
 from autobet.storage import Store
 from autobet.storage.config import MODELS
@@ -50,7 +51,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     account = sub.add_parser("account")
     account.add_argument("action", nargs="?", choices=("add", "forget"))
-    account.add_argument("email", nargs="?")
+    account.add_argument("whom", nargs="?")
 
     channel = sub.add_parser("channel")
     channel.add_argument("action", nargs="?", choices=("enable", "disable"))
@@ -145,16 +146,40 @@ async def cmd_book(
     await store.close()
 
 
-async def cmd_account(settings: Settings, action: str | None, email: str | None) -> None:
+async def _person(store: Store, whom: str) -> User | None:
+    """The user a command names, by id or by address, or None with the reason."""
+    if whom.isdigit():
+        found = await store.users.by_id(int(whom))
+
+        if found is None:
+            print(f"no user {whom}")
+
+        return found
+
+    people = await store.users.matching(whom)
+
+    if not people:
+        print(f"nobody signs in as {whom}")
+    elif len(people) > 1:
+        ids = ", ".join(str(one.id) for one in people)
+        print(f"{len(people)} people sign in as {whom}; name one by id: {ids}")
+
+    return people[0] if len(people) == 1 else None
+
+
+async def cmd_account(settings: Settings, action: str | None, whom: str | None) -> None:
     """List the accounts tips are staked through, or add and remove one."""
+    if not settings.encryption_key:
+        print("ENCRYPTION_KEY is not set: `openssl rand -hex 32` makes one")
+
+        return
+
     store = await Store.connect(settings.database_url, settings.encryption_key)
 
-    if action is not None and email is not None:
-        user = await store.users.by_email(email)
+    if action is not None and whom is not None:
+        user = await _person(store, whom)
 
         if user is None:
-            print(f"nobody signs in as {email}")
-
             await store.close()
 
             return
@@ -167,9 +192,10 @@ async def cmd_account(settings: Settings, action: str | None, email: str | None)
             await store.accounts.forget(user.id, TIPPMIXPRO)
 
     for account in await store.accounts.all(TIPPMIXPRO):
-        user = await store.users.by_id(account.user_id)
+        owner = await store.users.by_id(account.user_id)
         print(
-            f"{(user.email if user else '?'):<28} {account.username:<20} {account.status}"
+            f"{account.user_id:>4}  {(owner.email if owner else '?'):<28} "
+            f"{account.username:<20} {account.status}"
         )
 
     await store.close()
@@ -257,7 +283,7 @@ def main(argv: list[str] | None = None) -> int:
                     cmd_book(settings, args.key, args.value, args.enable, args.disable)
                 )
             case "account":
-                asyncio.run(cmd_account(settings, args.action, args.email))
+                asyncio.run(cmd_account(settings, args.action, args.whom))
             case "channel":
                 asyncio.run(cmd_channel(settings, args.action, args.chat_id))
             case _:
