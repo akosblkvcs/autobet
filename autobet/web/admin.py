@@ -145,6 +145,19 @@ def router(context: Context) -> APIRouter:
 
         return _back()
 
+    @api.post("/book/enable")
+    async def book_enable(request: Request, csrf: Field) -> Response:
+        who = await _actor(request, store, csrf)
+
+        if isinstance(who, Response):
+            return who
+
+        async with store.transaction() as tx:
+            await store.books.enable(True, TIPPMIXPRO, tx)
+            await store.audit.record(who.user.id, "bookmakers.enable", TIPPMIXPRO, {}, tx)
+
+        return _back()
+
     @api.post("/channel")
     async def channel(
         request: Request, csrf: Field, chat_id: Field, enabled: Field

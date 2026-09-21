@@ -31,9 +31,11 @@ class Config:
         """Wrap an open pool; :class:`autobet.storage.Store` owns it."""
         self._pool = pool
 
-    async def stored(self) -> dict[str, JsonValue]:
+    async def stored(self, conn: Executes | None = None) -> dict[str, JsonValue]:
         """Only what somebody has set, so a page can say what was changed."""
-        rows = await self._pool.fetch("SELECT key, value FROM settings ORDER BY key")
+        rows = await (conn or self._pool).fetch(
+            "SELECT key, value FROM settings ORDER BY key"
+        )
         known = {name for model in MODELS for name in model.model_fields}
 
         return {
@@ -57,7 +59,9 @@ class Config:
     ) -> None:
         """Store one value, after the owning model has validated the result."""
         model = owner(key)
-        current = model.model_validate(await self._for(model)).model_dump(mode="json")
+        current = model.model_validate(await self._for(model, conn)).model_dump(
+            mode="json"
+        )
         validated = model.model_validate(current | {key: value})
 
         await (conn or self._pool).execute(
@@ -72,8 +76,10 @@ class Config:
             actor_id,
         )
 
-    async def _for(self, model: type[BaseModel]) -> dict[str, JsonValue]:
+    async def _for(
+        self, model: type[BaseModel], conn: Executes | None = None
+    ) -> dict[str, JsonValue]:
         """The stored values this model owns."""
-        stored = await self.stored()
+        stored = await self.stored(conn)
 
         return {key: stored[key] for key in model.model_fields if key in stored}

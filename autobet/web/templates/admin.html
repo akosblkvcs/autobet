@@ -25,6 +25,12 @@
 
 <h2>Book</h2>
 <p class="quiet">tippmixpro &middot; {{ "enabled" if book_enabled else "not enabled" }}</p>
+{% if not book_enabled %}
+<form class="inline" method="post" action="/admin/book/enable">
+  <input type="hidden" name="csrf" value="{{ session.csrf }}">
+  <button type="submit">Enable book</button>
+</form>
+{% endif %}
 {% for field in book %}{{ row("/admin/book", field) }}{% endfor %}
 
 <h2>Channels</h2>

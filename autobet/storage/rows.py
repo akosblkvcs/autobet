@@ -17,12 +17,24 @@ type JsonValue = str | int | float | bool | None | list[JsonValue] | dict[str, J
 
 
 class Executes(Protocol):
-    """Anything a write can run on: the pool, or a connection in a transaction."""
+    """Anything a query can run on: the pool, or a connection in a transaction."""
 
     async def execute(
         self, query: str, *args: object, timeout: float | None = None
     ) -> str:
         """Run one statement."""
+        ...
+
+    async def fetch(
+        self, query: str, *args: object, timeout: float | None = None
+    ) -> list[Record]:
+        """Every row one query answers."""
+        ...
+
+    async def fetchrow(
+        self, query: str, *args: object, timeout: float | None = None
+    ) -> Record | None:
+        """The first row one query answers, or None."""
         ...
 
 
