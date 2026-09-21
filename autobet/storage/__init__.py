@@ -6,6 +6,8 @@ from asyncpg import Pool, create_pool
 
 from autobet.storage.archive import Archive
 from autobet.storage.bets import Bets
+from autobet.storage.books import Books
+from autobet.storage.config import Config
 from autobet.storage.events import Events
 from autobet.storage.migrate import apply_migrations
 from autobet.storage.reports import Reports
@@ -20,6 +22,8 @@ class Store:
         self._pool = pool
         self.archive = Archive(pool)
         self.bets = Bets(pool)
+        self.books = Books(pool)
+        self.config = Config(pool)
         self.events = Events(pool)
         self.reports = Reports(pool)
         self.users = Users(pool)

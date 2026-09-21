@@ -27,12 +27,14 @@ class Context:
     telegram: Telegram
     provider: Provider
 
-    def limits(self) -> dict[str, Any]:
-        """The settings that decide whether a tip becomes a bet."""
+    async def limits(self) -> dict[str, Any]:
+        """The stored limits that decide whether a tip becomes a bet."""
+        policy = await self.store.config.policy()
+
         return {
-            "stake": str(self.settings.stake),
-            "max_odds_drop": f"{self.settings.max_odds_drop_percent:g}%",
-            "max_event_days_ahead": str(self.settings.max_event_days_ahead),
+            "stake": str(policy.stake),
+            "max_odds_drop": f"{policy.max_odds_drop_percent:g}%",
+            "mismatch_rise": f"{policy.mismatch_rise_percent:g}%",
         }
 
     async def index(self) -> dict[str, Any]:

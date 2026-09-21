@@ -11,6 +11,7 @@ from autobet.bookmaker import Bookmaker
 from autobet.config import Settings
 from autobet.parser import build_claude, build_text_prompt, parse_tip
 from autobet.pipeline import PipelineState, run_pipeline
+from autobet.policy import Integrations
 from autobet.storage import Store
 from autobet.telegram import Telegram
 from autobet.web import build_app
@@ -39,14 +40,27 @@ def _stopping() -> asyncio.Event:
 async def run_service(settings: Settings) -> None:
     """Run the Telegram client, the bet placer and the control plane."""
     store = await Store.connect(settings.database_url)
+    integrations = await store.config.integrations()
+    missing = [
+        name for name in Integrations.model_fields if not getattr(integrations, name)
+    ]
+
+    if missing:
+        log.error(
+            "integrations_missing",
+            keys=missing,
+            fix="python -m autobet config <key> <value>",
+        )
+
+        raise SystemExit(1)
+
     state = PipelineState()
-    telegram = Telegram(settings)
+    telegram = Telegram(settings, integrations, store)
     bookmaker = Bookmaker(settings, store)
-    claude = build_claude(settings)
+    claude = build_claude(integrations.claude_api_key)
     parse = partial(
         parse_tip,
         claude=claude,
-        stake=settings.stake,
         text_prompt=build_text_prompt(settings),
     )
 

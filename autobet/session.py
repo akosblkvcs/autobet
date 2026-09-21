@@ -5,7 +5,7 @@ from typing import Any
 import httpx2
 import structlog
 
-from autobet.config import Settings
+from autobet.books import Tippmixpro
 
 log = structlog.get_logger(__name__)
 
@@ -26,27 +26,31 @@ class SessionError(RuntimeError):
         self.fix = fix
 
 
-async def mint_ce_session(settings: Settings) -> str:
+async def mint_ce_session(book: Tippmixpro, username: str, password: str) -> str:
     """Log in and return the token the feed needs to place bets."""
-    if not (settings.book_username and settings.book_api):
-        raise SessionError("no book login configured", "set BOOK_USERNAME and BOOK_API")
+    if not (username and book.api):
+        raise SessionError(
+            "no book login configured",
+            "set BOOK_USERNAME and `python -m autobet book api <url>`",
+        )
 
     headers = {
         "User-Agent": _AGENT,
         "Accept": "application/json",
-        "Origin": settings.book_site,
-        "Referer": f"{settings.book_site}/",
+        "Origin": book.site,
+        "Referer": f"{book.site}/",
     }
 
     async with httpx2.AsyncClient(
         headers=headers, timeout=_TIMEOUT, follow_redirects=True
     ) as client:
         signed_in = await client.post(
-            f"{settings.book_api}/v1/player/legislation/login?language=hu",
+            f"{book.api}/v1/player/legislation/login?language=hu",
             json={
-                "username": settings.book_username,
-                "password": settings.book_password.get_secret_value(),
+                "username": username,
+                "password": password,
             },
+            follow_redirects=False,
         )
         if signed_in.status_code != _OK:
             raise SessionError(
@@ -58,16 +62,14 @@ async def mint_ce_session(settings: Settings) -> str:
         client.headers["X-SessionId"] = str(opened.get("sessionId") or "")
 
         player: dict[str, Any] = (
-            await client.get(f"{settings.book_api}/v1/player/session/player?language=hu")
+            await client.get(f"{book.api}/v1/player/session/player?language=hu")
         ).json()
         sid = str(player.get("Guid") or "")
         if not sid:
             raise SessionError("no session guid after login", "check the credentials")
 
         loader: dict[str, Any] = (
-            await client.get(
-                settings.book_loader, params={"_sid": sid, "launchApi": "true"}
-            )
+            await client.get(book.loader, params={"_sid": sid, "launchApi": "true"})
         ).json()
 
     ce_session = str(loader.get("ceSession") or "")

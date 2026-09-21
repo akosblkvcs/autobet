@@ -11,6 +11,8 @@ from autobet.models import (
     TipLeg,
 )
 
+type JsonValue = str | int | float | bool | None | list[JsonValue] | dict[str, JsonValue]
+
 
 def to_message(row: Record) -> IncomingMessage:
     """A message row, with its channel's title as the carrier gave it."""
