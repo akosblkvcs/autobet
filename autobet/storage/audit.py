@@ -8,7 +8,7 @@ from datetime import datetime
 
 from asyncpg import Pool
 
-from autobet.storage.rows import JsonValue
+from autobet.storage.rows import Executes, JsonValue
 
 
 @dataclass(frozen=True, slots=True)
@@ -33,22 +33,19 @@ class Audit:
         self,
         actor_id: int,
         action: str,
-        entity: str,
         entity_id: str = "",
         detail: dict[str, JsonValue] | None = None,
+        conn: Executes | None = None,
     ) -> None:
-        """Note one change. `action` is a value like `settings.put`, never a sentence.
-
-        A secret's value never goes in `detail`: the log says which key changed.
-        """
-        await self._pool.execute(
+        """Note one change."""
+        await (conn or self._pool).execute(
             """
             INSERT INTO audit_log (actor_id, action, entity, entity_id, detail)
             VALUES ($1, $2, $3, $4, $5::jsonb)
             """,
             actor_id,
             action,
-            entity,
+            action.split(".", 1)[0],
             entity_id,
             json.dumps(detail or {}),
         )

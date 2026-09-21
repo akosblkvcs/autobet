@@ -7,7 +7,7 @@ import json
 from asyncpg import Pool, Record
 
 from autobet.books import TIPPMIXPRO, Tippmixpro
-from autobet.storage.rows import JsonValue
+from autobet.storage.rows import Executes, JsonValue
 
 
 def _known(row: Record) -> dict[str, JsonValue]:
@@ -50,11 +50,17 @@ class Books:
         """Whether this book may be used."""
         return bool((await self._row(slug))["enabled"])
 
-    async def put(self, key: str, value: JsonValue, slug: str = TIPPMIXPRO) -> None:
+    async def put(
+        self,
+        key: str,
+        value: JsonValue,
+        slug: str = TIPPMIXPRO,
+        conn: Executes | None = None,
+    ) -> None:
         """Store one endpoint, after the adapter's model has validated the result."""
         config = Tippmixpro.model_validate(await self.stored(slug) | {key: value})
 
-        await self._pool.execute(
+        await (conn or self._pool).execute(
             "UPDATE bookmakers SET config = $2::jsonb WHERE slug = $1",
             slug,
             json.dumps(config.model_dump(mode="json")),

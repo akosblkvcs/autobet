@@ -7,6 +7,7 @@ from datetime import timedelta
 from asyncpg import Pool, Record
 
 from autobet.models import Person, Role, SignedIn, User, utcnow
+from autobet.storage.rows import Executes
 
 SESSION_DAYS = 30
 
@@ -84,23 +85,34 @@ class Users:
             for row in rows
         ]
 
-    async def set_status(self, user_id: int, active: bool) -> None:
+    async def set_status(
+        self, user_id: int, active: bool, conn: Executes | None = None
+    ) -> None:
         """Let someone in, or end their access now."""
-        async with self._pool.acquire() as conn, conn.transaction():
-            await conn.execute(
-                "UPDATE users SET status = $2 WHERE id = $1",
-                user_id,
-                "active" if active else "disabled",
-            )
+        if conn is not None:
+            await self._status(conn, user_id, active)
 
-            if not active:
-                await conn.execute(
-                    """
-                    UPDATE sessions SET revoked_at = now()
-                    WHERE user_id = $1 AND revoked_at IS NULL
-                    """,
-                    user_id,
-                )
+            return
+
+        async with self._pool.acquire() as held, held.transaction():
+            await self._status(held, user_id, active)
+
+    async def _status(self, conn: Executes, user_id: int, active: bool) -> None:
+        """The status, and the sessions that a disabled status invalidates."""
+        await conn.execute(
+            "UPDATE users SET status = $2 WHERE id = $1",
+            user_id,
+            "active" if active else "disabled",
+        )
+
+        if not active:
+            await conn.execute(
+                """
+                UPDATE sessions SET revoked_at = now()
+                WHERE user_id = $1 AND revoked_at IS NULL
+                """,
+                user_id,
+            )
 
     async def open_session(self, user: User) -> str:
         """Start a session for this user and return the cookie value."""
