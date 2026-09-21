@@ -9,6 +9,7 @@
 <header class="bar">
   <span class="brand">autobet</span>
   {% if session is defined and session %}
+  <nav><a href="/">Tips</a> <a href="/admin">Admin</a></nav>
   <span class="who quiet">{{ session.user.email or session.user.subject }}</span>
   {% endif %}
 </header>

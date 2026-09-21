@@ -3,10 +3,9 @@
 # pyright: reportUnusedFunction=false
 
 from fastapi import APIRouter, Request
-from fastapi.responses import HTMLResponse, RedirectResponse, Response
+from fastapi.responses import HTMLResponse, Response
 
-from autobet.web.auth import signed_in
-from autobet.web.context import Context, templates
+from autobet.web.context import Context, admin_only, templates
 
 
 def router(context: Context) -> APIRouter:
@@ -15,18 +14,10 @@ def router(context: Context) -> APIRouter:
 
     @api.get("/", response_class=HTMLResponse)
     async def index(request: Request) -> Response:
-        session = await signed_in(request, context.store)
+        session = await admin_only(request, context.store)
 
-        if session is None:
-            return RedirectResponse("/auth/login", status_code=303)
-
-        if not session.user.is_admin:
-            return templates.TemplateResponse(
-                request,
-                "forbidden.html",
-                {"reason": "this page is for administrators"},
-                status_code=403,
-            )
+        if isinstance(session, Response):
+            return session
 
         reports = context.store.reports
         latency = await reports.latency_percentiles()

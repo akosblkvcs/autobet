@@ -9,7 +9,7 @@ from autobet.config import Settings
 from autobet.pipeline import PipelineState
 from autobet.storage import Store
 from autobet.telegram import Telegram
-from autobet.web import dashboard, health, signin
+from autobet.web import admin, dashboard, health, signin
 from autobet.web.auth import Provider
 from autobet.web.context import Context
 
@@ -38,5 +38,6 @@ def build_app(
     app.include_router(health.router(context))
     app.include_router(signin.router(context))
     app.include_router(dashboard.router(context))
+    app.include_router(admin.router(context))
 
     return app

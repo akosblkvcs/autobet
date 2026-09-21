@@ -5,16 +5,36 @@ from pathlib import Path
 from typing import Any
 
 import humanize
+from fastapi import Request
+from fastapi.responses import RedirectResponse, Response
 from fastapi.templating import Jinja2Templates
 
 from autobet.config import Settings
-from autobet.models import utcnow
+from autobet.models import SignedIn, utcnow
 from autobet.pipeline import PipelineState
 from autobet.storage import Store
 from autobet.telegram import Telegram
-from autobet.web.auth import Provider
+from autobet.web.auth import Provider, signed_in
 
 templates = Jinja2Templates(directory=str(Path(__file__).parent / "templates"))
+
+
+async def admin_only(request: Request, store: Store) -> SignedIn | Response:
+    """The signed-in admin, or the response to send instead of the page."""
+    session = await signed_in(request, store)
+
+    if session is None:
+        return RedirectResponse("/auth/login", status_code=303)
+
+    if not session.user.is_admin:
+        return templates.TemplateResponse(
+            request,
+            "forbidden.html",
+            {"reason": "this page is for administrators"},
+            status_code=403,
+        )
+
+    return session
 
 
 @dataclass(frozen=True, slots=True)

@@ -164,6 +164,72 @@ h2:first-child {
   color: var(--rise);
 }
 
+.rows {
+  display: grid;
+  gap: .6rem;
+  margin: 0;
+  max-width: 34rem;
+}
+
+.rows.plain {
+  list-style: none;
+  padding: 0;
+  gap: .3rem;
+}
+
+label {
+  display: grid;
+  gap: .2rem;
+  color: var(--muted);
+}
+
+input,
+button {
+  font: inherit;
+  font-size: 16px;
+  padding: .45rem .5rem;
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  background: var(--bg);
+  color: var(--fg);
+}
+
+button {
+  background: var(--card);
+  cursor: pointer;
+  justify-self: start;
+}
+
+.inline {
+  display: flex;
+  flex-wrap: wrap;
+  gap: .4rem;
+  align-items: end;
+  margin: 0 0 .5rem;
+}
+
+.inline label {
+  flex: 1 1 18rem;
+}
+
+.inline .name {
+  flex: 1 1 12rem;
+  color: var(--fg);
+  align-self: center;
+}
+
+.error {
+  padding: .5rem .6rem;
+  border: 1px solid var(--drop);
+  border-radius: 5px;
+  color: var(--drop);
+}
+
+.bar nav a {
+  color: var(--dim);
+  margin-right: .6rem;
+}
+
 @media (min-width: 40rem) {
   :root {
     --gutter: 2rem;

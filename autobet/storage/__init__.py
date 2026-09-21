@@ -5,6 +5,7 @@ from __future__ import annotations
 from asyncpg import Pool, create_pool
 
 from autobet.storage.archive import Archive
+from autobet.storage.audit import Audit
 from autobet.storage.bets import Bets
 from autobet.storage.books import Books
 from autobet.storage.config import Config
@@ -21,6 +22,7 @@ class Store:
         """Wrap an open pool; use :meth:`connect` rather than calling this."""
         self._pool = pool
         self.archive = Archive(pool)
+        self.audit = Audit(pool)
         self.bets = Bets(pool)
         self.books = Books(pool)
         self.config = Config(pool)

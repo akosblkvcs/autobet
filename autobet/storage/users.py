@@ -6,7 +6,7 @@ from datetime import timedelta
 
 from asyncpg import Pool, Record
 
-from autobet.models import Role, SignedIn, User, utcnow
+from autobet.models import Person, Role, SignedIn, User, utcnow
 
 SESSION_DAYS = 30
 
@@ -65,6 +65,42 @@ class Users:
             assert created is not None
 
             return _to_user(created)
+
+    async def all(self) -> list[Person]:
+        """Everyone who has ever signed in, newest first."""
+        rows = await self._pool.fetch(
+            """
+            SELECT id, subject, email, role, status, last_login_at
+            FROM users ORDER BY created_at DESC
+            """
+        )
+
+        return [
+            Person(
+                user=_to_user(row),
+                status=row["status"],
+                last_login_at=row["last_login_at"],
+            )
+            for row in rows
+        ]
+
+    async def set_status(self, user_id: int, active: bool) -> None:
+        """Let someone in, or end their access now."""
+        async with self._pool.acquire() as conn, conn.transaction():
+            await conn.execute(
+                "UPDATE users SET status = $2 WHERE id = $1",
+                user_id,
+                "active" if active else "disabled",
+            )
+
+            if not active:
+                await conn.execute(
+                    """
+                    UPDATE sessions SET revoked_at = now()
+                    WHERE user_id = $1 AND revoked_at IS NULL
+                    """,
+                    user_id,
+                )
 
     async def open_session(self, user: User) -> str:
         """Start a session for this user and return the cookie value."""
