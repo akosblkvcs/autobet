@@ -93,6 +93,14 @@ def load(path: Path) -> dict[str, list[str]]:
     return vocabulary
 
 
+def merge(old: dict[str, list[str]], new: dict[str, list[str]]) -> dict[str, list[str]]:
+    """Every bet type either run found, because one run is a lossy sample."""
+    return {
+        sport: sorted(set(old.get(sport, ())) | set(new.get(sport, ())))
+        for sport in sorted(set(old) | set(new))
+    }
+
+
 def save(vocabulary: dict[str, list[str]], path: Path) -> None:
     """Write the vocabulary where :func:`load` will find it."""
     path.parent.mkdir(parents=True, exist_ok=True)
