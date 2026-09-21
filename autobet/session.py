@@ -31,7 +31,7 @@ async def mint_ce_session(book: Tippmixpro, username: str, password: str) -> str
     if not (username and book.api):
         raise SessionError(
             "no book login configured",
-            "set BOOK_USERNAME and `python -m autobet book api <url>`",
+            "add an account and set `python -m autobet book api <url>`",
         )
 
     headers = {
@@ -55,7 +55,7 @@ async def mint_ce_session(book: Tippmixpro, username: str, password: str) -> str
         if signed_in.status_code != _OK:
             raise SessionError(
                 f"login refused with {signed_in.status_code}",
-                "check BOOK_USERNAME and BOOK_PASSWORD",
+                "check the stored account's username and password",
             )
 
         opened: dict[str, Any] = signed_in.json()

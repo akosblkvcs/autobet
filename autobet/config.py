@@ -7,6 +7,7 @@ from pydantic import BeforeValidator, SecretStr, field_validator
 from pydantic_core.core_schema import ValidationInfo
 from pydantic_settings import BaseSettings, NoDecode
 
+from autobet import crypto
 from autobet.logs import LogLevel
 
 
@@ -24,6 +25,15 @@ Emails = Annotated[tuple[str, ...], NoDecode, BeforeValidator(_split)]
 class Settings(BaseSettings):
     """Everything the app needs to run, sourced from environment variables."""
 
+    @field_validator("encryption_key")
+    @classmethod
+    def _usable(cls, value: str) -> str:
+        """A typo here would only surface on the first credential read."""
+        if value:
+            crypto.key(value)
+
+        return value
+
     @field_validator("oidc_issuer")
     @classmethod
     def _trusted(cls, value: str, info: ValidationInfo) -> str:
@@ -39,8 +49,7 @@ class Settings(BaseSettings):
     log_level: LogLevel = "INFO"
     data_dir: Path = Path("data")
 
-    book_username: str = ""
-    book_password: SecretStr = SecretStr("")
+    encryption_key: str = ""
 
     database_url: str = "postgresql://postgres:postgres@localhost:5432/autobet"
 
