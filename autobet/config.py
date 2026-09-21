@@ -7,7 +7,7 @@ from pydantic import BeforeValidator, SecretStr, field_validator
 from pydantic_core.core_schema import ValidationInfo
 from pydantic_settings import BaseSettings, NoDecode
 
-from autobet.logging import LogLevel
+from autobet.logs import LogLevel
 
 
 def _split(value: object) -> object:
