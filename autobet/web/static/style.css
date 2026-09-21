@@ -1,26 +1,54 @@
-/* One dark palette; every colour below is a token so there is one place to change. */
 :root {
   color-scheme: dark;
   --bg: #15171b;
+  --card: #191c21;
   --fg: #d7dae0;
   --muted: #868c99;
   --dim: #a8aebb;
   --line: #282c34;
   --drop: #e5707a;
   --rise: #6cc38a;
+  --gutter: 1rem;
+}
+
+* {
+  box-sizing: border-box;
 }
 
 body {
-  font: 14px/1.5 ui-monospace, monospace;
-  margin: 2rem;
-  max-width: 70rem;
+  font: 15px/1.5 ui-monospace, monospace;
+  margin: 0;
   background: var(--bg);
   color: var(--fg);
 }
 
+body,
+.tip {
+  overflow-wrap: anywhere;
+}
+
+.bar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0 1rem;
+  align-items: baseline;
+  padding: var(--gutter);
+  border-bottom: 1px solid var(--line);
+}
+
+.bar .brand {
+  font-weight: 600;
+}
+
+main {
+  max-width: 70rem;
+  margin: 0 auto;
+  padding: var(--gutter);
+}
+
 h1 {
-  font-size: 1.3rem;
-  margin: 0 0 1.5rem;
+  font-size: 1.2rem;
+  margin: 0 0 1rem;
 }
 
 h2 {
@@ -29,39 +57,64 @@ h2 {
   color: var(--muted);
 }
 
+h2:first-child {
+  margin-top: 0;
+}
+
 .stats {
   display: grid;
   grid-template-columns: auto 1fr;
-  gap: .1rem 1rem;
-  margin: 0 0 2rem;
+  gap: .1rem .75rem;
+  margin: 0;
 }
 
 .stats dt {
   color: var(--muted);
 }
 
-table {
-  border-collapse: collapse;
-  width: 100%;
+.stats dd {
+  margin: 0;
 }
 
-td {
-  border-top: 1px solid var(--line);
-  padding: .4rem;
-  vertical-align: top;
+.tips {
+  list-style: none;
+  margin: 0;
+  padding: 0;
 }
 
-.nowrap {
-  white-space: nowrap;
+.tip {
+  margin-top: .75rem;
+  padding: .75rem;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--card);
+}
+
+.tip .meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0 .75rem;
   color: var(--muted);
+  font-size: .85em;
 }
 
-.leg + .leg {
-  margin-top: .5rem;
+.leg {
+  margin-top: .6rem;
+}
+
+.leg .headline {
+  display: flex;
+  gap: .75rem;
+  justify-content: space-between;
 }
 
 .leg .event {
   font-weight: 600;
+}
+
+.leg .odds {
+  font-weight: 600;
+  white-space: nowrap;
 }
 
 .leg .market {
@@ -69,38 +122,58 @@ td {
   color: var(--dim);
 }
 
-.leg .odds {
-  float: right;
-  font-weight: 600;
+.leg .offer {
+  padding-left: 1.2rem;
+  font-size: .85em;
+  color: var(--muted);
+}
+
+.leg .stage,
+.leg .unlooked {
+  padding-left: 1.2rem;
+  font-size: .85em;
+  color: var(--drop);
+}
+
+.leg .unlooked {
+  color: var(--muted);
+  font-style: italic;
+}
+
+.verdict {
+  margin-top: .6rem;
+  padding-top: .5rem;
+  border-top: 1px solid var(--line);
+  font-size: .9em;
+}
+
+.verdict.refused,
+.verdict.failed {
+  color: var(--drop);
 }
 
 .quiet {
   color: var(--muted);
 }
 
-.leg .offer {
-  padding-left: 1rem;
-  font-size: .85em;
-  color: var(--muted);
-}
-
-.leg .offer.unresolved {
-  font-style: italic;
-}
-
-.refused {
-  margin-top: .4rem;
+.drop {
   color: var(--drop);
 }
 
-.leg .drop {
-  color: var(--drop);
-}
-
-.leg .rise {
+.rise {
   color: var(--rise);
 }
 
-.whoami {
-  margin: -0.5rem 0 1.5rem;
+@media (min-width: 40rem) {
+  :root {
+    --gutter: 2rem;
+  }
+
+  .stats {
+    grid-template-columns: 12rem 1fr;
+  }
+
+  .bar {
+    justify-content: space-between;
+  }
 }
