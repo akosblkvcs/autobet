@@ -171,15 +171,23 @@ async def cmd_markets(settings: Settings) -> None:
     """Harvest the bookmaker's bet types so the parser can name them."""
     store = await Store.connect(settings.database_url)
     events = await store.events.all()
+    before = markets.load(settings.market_families)
 
     async with connected(await store.books.config()) as connection:
-        vocabulary = await markets.harvest(connection, events)
+        harvested = await markets.harvest(connection, events)
+
+    vocabulary = markets.merge(before, harvested)
 
     markets.save(vocabulary, settings.market_families)
 
+    added = sum(
+        len(set(names) - set(before.get(sport, ())))
+        for sport, names in vocabulary.items()
+    )
+
     print(
         f"{sum(len(names) for names in vocabulary.values())} bet types "
-        f"across {len(vocabulary)} sports -> {settings.market_families}"
+        f"across {len(vocabulary)} sports, {added} new -> {settings.market_families}"
     )
 
     await store.close()
