@@ -19,6 +19,13 @@ from autobet.web.auth import Provider, signed_in
 templates = Jinja2Templates(directory=str(Path(__file__).parent / "templates"))
 
 
+async def whoever(request: Request, store: Store) -> SignedIn | Response:
+    """Whoever is signed in, or the redirect that asks them to be."""
+    session = await signed_in(request, store)
+
+    return session or RedirectResponse("/auth/login", status_code=303)
+
+
 async def admin_only(request: Request, store: Store) -> SignedIn | Response:
     """The signed-in admin, or the response to send instead of the page."""
     session = await signed_in(request, store)
@@ -29,8 +36,8 @@ async def admin_only(request: Request, store: Store) -> SignedIn | Response:
     if not session.user.is_admin:
         return templates.TemplateResponse(
             request,
-            "forbidden.html",
-            {"reason": "this page is for administrators"},
+            "denied.html",
+            {"reason": "this page is for administrators", "session": session},
             status_code=403,
         )
 

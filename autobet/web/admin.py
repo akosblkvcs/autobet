@@ -7,7 +7,7 @@ from typing import Annotated
 
 from fastapi import APIRouter, Form, Request
 from fastapi.responses import HTMLResponse, RedirectResponse, Response
-from pydantic import ValidationError
+from pydantic import BaseModel, ValidationError
 
 from autobet.books import Tippmixpro
 from autobet.models import SignedIn
@@ -46,51 +46,43 @@ async def _actor(request: Request, store: Store, csrf: str) -> SignedIn | Respon
     return guarded
 
 
+def _fields(held: BaseModel) -> list[dict[str, JsonValue]]:
+    """One row per value: what it is, what it holds, and whether to hide it."""
+    return [
+        {
+            "name": name,
+            "value": "" if name in SECRETS else str(getattr(held, name)),
+            "secret": name in SECRETS,
+            "set": bool(getattr(held, name)),
+            "description": field.description or "",
+        }
+        for name, field in type(held).model_fields.items()
+    ]
+
+
 async def _page(
     request: Request, context: Context, session: SignedIn, error: str = ""
 ) -> Response:
     """The page as it stands, with a reason when a change was refused."""
     store = context.store
+    policy = await store.config.policy()
+    integrations = await store.config.integrations()
 
     return templates.TemplateResponse(
         request,
         "admin.html",
         {
-            "policy": await store.config.policy(),
-            "integrations": await store.config.integrations(),
-            "secrets": sorted(SECRETS),
-            "book": await store.books.stored(),
-            "book_fields": list(Tippmixpro.model_fields),
+            "limits": _fields(policy),
+            "keys": _fields(integrations),
+            "book": _fields(Tippmixpro.model_validate(await store.books.stored())),
             "book_enabled": await store.books.enabled(),
             "channels": await store.archive.channels(),
             "people": await store.users.all(),
-            "entries": await store.audit.recent(),
             "error": error,
             "session": session,
         },
         status_code=400 if error else 200,
     )
-
-
-async def _settings(
-    store: Store, who: SignedIn, sent: dict[str, str], logged: bool
-) -> str:
-    """Store the settings that changed, and say why if one was refused."""
-    held = (await store.config.policy()).model_dump(mode="json")
-
-    for key, value in sent.items():
-        if not value or value == str(held.get(key, "")):
-            continue
-
-        try:
-            await store.config.put(key, value, who.user.id)
-        except ValidationError as refused:
-            return _reason(refused)
-
-        detail: dict[str, JsonValue] = {"value": value} if logged else {}
-        await store.audit.record(who.user.id, "settings.put", "settings", key, detail)
-
-    return ""
 
 
 def router(context: Context) -> APIRouter:
@@ -108,39 +100,9 @@ def router(context: Context) -> APIRouter:
             else await _page(request, context, guarded)
         )
 
-    @api.post("/limits")
-    async def limits(
-        request: Request,
-        csrf: Field,
-        stake: Field,
-        max_odds_drop_percent: Field,
-        mismatch_rise_percent: Field,
-    ) -> Response:
-        who = await _actor(request, store, csrf)
-
-        if isinstance(who, Response):
-            return who
-
-        error = await _settings(
-            store,
-            who,
-            {
-                "stake": stake,
-                "max_odds_drop_percent": max_odds_drop_percent,
-                "mismatch_rise_percent": mismatch_rise_percent,
-            },
-            logged=True,
-        )
-
-        return await _page(request, context, who, error) if error else _back()
-
-    @api.post("/keys")
-    async def keys(
-        request: Request,
-        csrf: Field,
-        telegram_api_id: Blank = "",
-        telegram_api_hash: Blank = "",
-        claude_api_key: Blank = "",
+    @api.post("/setting")
+    async def setting(
+        request: Request, csrf: Field, key: Field, value: Blank = ""
     ) -> Response:
         who = await _actor(request, store, csrf)
 
@@ -149,18 +111,18 @@ def router(context: Context) -> APIRouter:
 
         # A blank field leaves the stored value alone, which is how a secret
         # stays editable on a page that never prints it.
-        error = await _settings(
-            store,
-            who,
-            {
-                "telegram_api_id": telegram_api_id,
-                "telegram_api_hash": telegram_api_hash,
-                "claude_api_key": claude_api_key,
-            },
-            logged=False,
-        )
+        if not value:
+            return _back()
 
-        return await _page(request, context, who, error) if error else _back()
+        try:
+            await store.config.put(key, value, who.user.id)
+        except (ValidationError, ValueError) as refused:
+            return await _page(request, context, who, _reason(refused))
+
+        detail: dict[str, JsonValue] = {} if key in SECRETS else {"value": value}
+        await store.audit.record(who.user.id, "settings.put", "settings", key, detail)
+
+        return _back()
 
     @api.post("/book")
     async def book(
@@ -178,20 +140,6 @@ def router(context: Context) -> APIRouter:
 
         await store.audit.record(
             who.user.id, "book.put", "bookmakers", key, {"value": value}
-        )
-
-        return _back()
-
-    @api.post("/book/state")
-    async def book_state(request: Request, csrf: Field, enabled: Field) -> Response:
-        who = await _actor(request, store, csrf)
-
-        if isinstance(who, Response):
-            return who
-
-        await store.books.enable(enabled == "true")
-        await store.audit.record(
-            who.user.id, "book.enable", "bookmakers", "", {"enabled": enabled}
         )
 
         return _back()

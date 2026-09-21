@@ -1,0 +1,53 @@
+<ul class="tips">
+  {% for row in rows %}
+  <li class="tip">
+    <div class="meta">
+      <span>{{ row.message.received_at.strftime("%m-%d %H:%M:%S") }}</span>
+      <span>{{ row.message.transport_latency_ms }}&nbsp;ms</span>
+      <span>{{ row.message.channel }}</span>
+    </div>
+
+    {% for leg, resolution in row.paired() %}
+    <div class="leg">
+      <div class="headline">
+        <span class="event">{{ leg.event }}</span>
+        <span class="odds">{{ leg.odds if leg.odds else "—" }}</span>
+      </div>
+      <div class="market">{{ leg.market }} &rarr; {{ leg.selection }}</div>
+
+      {% if resolution is none %}
+      <div class="unlooked">not looked up</div>
+      {% elif resolution.offer %}
+      <div class="offer">
+        matched {{ resolution.offer.event_name }} &middot; live {{ resolution.offer.odds }}
+        {% if resolution.offer.drop_percent is not none %}
+        <span class="{{ 'drop' if resolution.offer.drop_percent > 0 else 'rise' }}">
+          {{ "%+.1f" % -resolution.offer.drop_percent }}%
+        </span>
+        {% else %}
+        <span class="quiet">no price given</span>
+        {% endif %}
+      </div>
+      {% else %}
+      <div class="stage">stopped at {{ resolution.status.replace("_", " ") }}</div>
+      {% endif %}
+    </div>
+    {% endfor %}
+
+    {% if row.legs | length > 1 and row.odds %}
+    <div class="quiet">accumulator, combined {{ "%.2f" % row.odds }}</div>
+    {% endif %}
+
+    {% if row.refusal %}
+    <div class="verdict refused">
+      refused &middot; {{ row.refusal.code.replace("_", " ") }}
+      {%- if row.refusal.detail %} &middot; {{ row.refusal.detail }}{% endif %}
+    </div>
+    {% elif row.error %}
+    <div class="verdict failed">failed &middot; {{ row.error }}</div>
+    {% elif row.reference %}
+    <div class="verdict quiet">placed &middot; {{ row.reference }}</div>
+    {% endif %}
+  </li>
+  {% endfor %}
+</ul>

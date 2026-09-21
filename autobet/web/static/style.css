@@ -212,6 +212,10 @@ button {
   flex: 1 1 18rem;
 }
 
+.rows.plain .inline {
+  align-items: center;
+}
+
 .inline .name {
   flex: 1 1 12rem;
   color: var(--fg);
@@ -223,6 +227,12 @@ button {
   border: 1px solid var(--drop);
   border-radius: 5px;
   color: var(--drop);
+}
+
+h2 abbr {
+  color: var(--muted);
+  cursor: help;
+  text-decoration: none;
 }
 
 .bar nav a {

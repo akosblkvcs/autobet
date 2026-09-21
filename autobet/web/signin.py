@@ -37,7 +37,7 @@ def router(context: Context) -> APIRouter:
             log.error("sign_in_unavailable", detail=str(error))
 
             return templates.TemplateResponse(
-                request, "forbidden.html", {"reason": str(error)}, status_code=503
+                request, "signin_failed.html", {"reason": str(error)}, status_code=503
             )
 
         return response
@@ -57,7 +57,7 @@ def router(context: Context) -> APIRouter:
             log.warning("sign_in_failed", detail=str(error))
 
             return templates.TemplateResponse(
-                request, "forbidden.html", {"reason": str(error)}, status_code=403
+                request, "signin_failed.html", {"reason": str(error)}, status_code=403
             )
 
         admin = email in context.settings.admin_emails
@@ -68,7 +68,7 @@ def router(context: Context) -> APIRouter:
 
             return templates.TemplateResponse(
                 request,
-                "forbidden.html",
+                "denied.html",
                 {"reason": "this account is disabled here"},
                 status_code=403,
             )

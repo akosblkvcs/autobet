@@ -1,11 +1,11 @@
-"""The archive dashboard: what the parser made of each screenshot."""
+"""The dashboard and the tip list: the two pages every signed-in person sees."""
 
 # pyright: reportUnusedFunction=false
 
 from fastapi import APIRouter, Request
 from fastapi.responses import HTMLResponse, Response
 
-from autobet.web.context import Context, admin_only, templates
+from autobet.web.context import Context, templates, whoever
 
 
 def router(context: Context) -> APIRouter:
@@ -14,7 +14,7 @@ def router(context: Context) -> APIRouter:
 
     @api.get("/", response_class=HTMLResponse)
     async def index(request: Request) -> Response:
-        session = await admin_only(request, context.store)
+        session = await whoever(request, context.store)
 
         if isinstance(session, Response):
             return session
@@ -22,7 +22,7 @@ def router(context: Context) -> APIRouter:
         reports = context.store.reports
         latency = await reports.latency_percentiles()
 
-        response = templates.TemplateResponse(
+        return templates.TemplateResponse(
             request,
             "dashboard.html",
             {
@@ -31,11 +31,21 @@ def router(context: Context) -> APIRouter:
                 "index": await context.index(),
                 "limits": await context.limits(),
                 "totals": await reports.totals() | {"transport_latency_ms": latency},
-                "rows": await context.store.bets.recent(50),
                 "session": session,
             },
         )
 
-        return response
+    @api.get("/tips", response_class=HTMLResponse)
+    async def tips(request: Request) -> Response:
+        session = await whoever(request, context.store)
+
+        if isinstance(session, Response):
+            return session
+
+        return templates.TemplateResponse(
+            request,
+            "tips.html",
+            {"rows": await context.store.bets.recent(50), "session": session},
+        )
 
     return api

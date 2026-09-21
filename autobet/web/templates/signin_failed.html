@@ -1,11 +1,9 @@
 {% extends "base.html" %}
 
-{% block title %}autobet{% endblock %}
-
 {% block body %}
-<h1>Not signed in</h1>
+<h1>Sign-in failed</h1>
 
-<p>{{ reason }}</p>
+<p>{{ reason|capitalize }}.</p>
 
 <p><a href="/auth/login">Try again</a></p>
 {% endblock %}
