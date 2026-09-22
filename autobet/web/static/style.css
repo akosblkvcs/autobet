@@ -230,6 +230,20 @@ button {
   align-items: center;
 }
 
+.rows.plain form.inline {
+  flex-wrap: nowrap;
+}
+
+.rows.plain form.inline .name,
+.rows.plain form.inline .quiet {
+  min-width: 0;
+}
+
+.rows.plain form.inline button {
+  flex: 0 0 auto;
+  margin-left: auto;
+}
+
 .inline .name {
   flex: 1 1 12rem;
   color: var(--fg);

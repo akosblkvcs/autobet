@@ -65,7 +65,10 @@
       <input type="hidden" name="user_id" value="{{ person.user.id }}">
       <input type="hidden" name="active" value="{{ "false" if person.status == "active" else "true" }}">
       <span class="name">{{ person.user.display }}</span>
-      <span class="quiet">{{ person.user.email }} &middot; {{ person.user.role }} &middot; {{ person.status }}</span>
+      <span class="quiet">
+        {%- if person.user.email and person.user.email != person.user.display -%}
+        {{ person.user.email }} &middot;
+        {%- endif %} {{ person.user.role }} &middot; {{ person.status }}</span>
       {% if person.user.id != session.user.id %}
       <button type="submit">{{ "Disable" if person.status == "active" else "Enable" }}</button>
       {% endif %}
