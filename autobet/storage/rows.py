@@ -49,6 +49,7 @@ def to_event(row: Record) -> IndexedEvent:
         home=tuple(row["home"]),
         away=tuple(row["away"]),
         starts_at=row["starts_at"],
+        markets=row["markets"],
     )
 
 
@@ -64,6 +65,7 @@ def event_row(event: IndexedEvent) -> tuple[object, ...]:
         list(event.home),
         list(event.away),
         event.starts_at,
+        event.markets,
     )
 
 

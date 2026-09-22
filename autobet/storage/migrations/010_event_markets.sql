@@ -1,0 +1,1 @@
+ALTER TABLE events ADD COLUMN markets integer NOT NULL DEFAULT 0;

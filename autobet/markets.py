@@ -39,9 +39,9 @@ def families_of(records: list[dict[str, Any]], event: IndexedEvent) -> set[str]:
 async def harvest(
     connection: Connection, events: list[IndexedEvent]
 ) -> dict[str, list[str]]:
-    """Collect the bet types on offer, a few events per sport."""
+    """Collect the bet types on offer, from a sport's eight biggest fixtures."""
     sampled: dict[str, list[IndexedEvent]] = defaultdict(list)
-    for event in events:
+    for event in sorted(events, key=lambda one: -one.markets):
         if len(sampled[event.sport]) < _PER_SPORT:
             sampled[event.sport].append(event)
 

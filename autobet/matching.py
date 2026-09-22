@@ -174,6 +174,8 @@ class IndexedEvent:
     home: tuple[str, ...]
     away: tuple[str, ...]
     starts_at: datetime | None
+    markets: int = 0
+    """How many markets the fixture declares, which is what `harvest` samples by."""
 
     def side_of(self, competitor: str) -> str | None:
         """Which side a name picks out, or None when it fits both or neither."""
@@ -183,6 +185,15 @@ class IndexedEvent:
             return None
 
         return "home" if home > away else "away"
+
+
+@dataclass(frozen=True, slots=True)
+class IndexedTournament:
+    """One competition as the walk found it, and the two things a re-walk needs."""
+
+    id: str
+    sport_id: str
+    upcoming: int
 
 
 def _aliases(records: Sequence[dict[str, Any]], side: str) -> tuple[str, ...]:
@@ -210,6 +221,7 @@ def indexed_event(records: Sequence[dict[str, Any]], tournament_id: str) -> Inde
         home=_aliases(records, "home"),
         away=_aliases(records, "away"),
         starts_at=_starts_at(first),
+        markets=int(first.get("numberOfMarkets") or 0),
     )
 
 

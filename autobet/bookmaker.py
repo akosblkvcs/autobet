@@ -278,6 +278,9 @@ class Bookmaker:
         if started:
             return Refusal(RefusalCode.EVENT_STARTED, started[0].event_name)
 
+        if tip.odds is None:
+            return Refusal(RefusalCode.UNPRICED, "the tipster quoted no price")
+
         _, drop = _priced(tip, placeable)
 
         if drop is not None and -drop > rise_percent:
@@ -292,11 +295,9 @@ class Bookmaker:
         self, tip: Tip, offers: list[LegOffer], terms: Terms
     ) -> Refusal | None:
         """The limits this person owns, theirs to loosen or tighten."""
-        live, drop = _priced(tip, offers)
+        _, drop = _priced(tip, offers)
 
-        if drop is None:
-            log.info("odds_drop_unchecked", live=round(live, 3))
-        elif drop > terms.max_odds_drop_percent:
+        if drop is not None and drop > terms.max_odds_drop_percent:
             return Refusal(
                 RefusalCode.ODDS_DROP,
                 f"{drop:.1f}%, limit {terms.max_odds_drop_percent:.0f}%",
