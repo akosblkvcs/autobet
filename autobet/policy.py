@@ -15,6 +15,8 @@ class Policy(BaseModel):
     stake: Decimal = Field(
         default=Decimal("100"),
         ge=100,
+        max_digits=12,
+        decimal_places=2,
         description="Flat amount staked on every tip, until a user sets their own.",
     )
     max_odds_drop_percent: float = Field(
@@ -63,6 +65,8 @@ class UserPolicy(BaseModel):
     stake: Decimal | None = Field(
         default=None,
         ge=100,
+        max_digits=12,
+        decimal_places=2,
         description="What this person stakes per tip; blank follows the service.",
     )
     max_odds_drop_percent: float | None = Field(

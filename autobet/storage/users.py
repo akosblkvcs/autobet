@@ -137,23 +137,13 @@ class Users:
         terms = UserPolicy.model_validate(current | {key: value})
 
         await self._pool.execute(
-            """
-            INSERT INTO user_settings (
-                user_id, mode, paused, stake, max_odds_drop_percent
-            )
-            VALUES ($1, $2, $3, $4, $5)
-            ON CONFLICT (user_id) DO UPDATE SET
-                mode = EXCLUDED.mode,
-                paused = EXCLUDED.paused,
-                stake = EXCLUDED.stake,
-                max_odds_drop_percent = EXCLUDED.max_odds_drop_percent,
-                updated_at = now()
+            f"""
+            INSERT INTO user_settings (user_id, {key}) VALUES ($1, $2)
+            ON CONFLICT (user_id) DO UPDATE SET {key} = EXCLUDED.{key},
+                                                updated_at = now()
             """,
             user_id,
-            terms.mode,
-            terms.paused,
-            terms.stake,
-            terms.max_odds_drop_percent,
+            getattr(terms, key),
         )
 
     async def stored_policy(self, user_id: int) -> set[str]:

@@ -238,7 +238,7 @@ class BetResult:
     """Whose bet this is. None while nobody holds credentials for the book."""
 
     stake: Decimal = Decimal("0")
-    """What this account staked, or would have. Zero when it never got that far."""
+    """What this account staked, or would have. Zero only on the unowned row."""
 
     @property
     def offers(self) -> tuple[LegOffer | None, ...]:

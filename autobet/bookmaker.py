@@ -90,10 +90,11 @@ class Bookmaker:
             )
 
         held = await self._store.users.policies([account.user_id for account in accounts])
+        terms = [held[account.user_id].over(policy) for account in accounts]
         bets = await asyncio.gather(
             *(
-                self._bet(book, tip, shared, held[account.user_id].over(policy), account)
-                for account in accounts
+                self._bet(book, tip, shared, own, account)
+                for own, account in zip(terms, accounts, strict=True)
             ),
             return_exceptions=True,
         )
@@ -101,10 +102,15 @@ class Bookmaker:
         return Placement(
             resolutions=shared.resolutions,
             results=tuple(
-                replace(shared, user_id=account.user_id, error=type(one).__name__)
+                replace(
+                    shared,
+                    user_id=account.user_id,
+                    stake=own.stake,
+                    error=type(one).__name__,
+                )
                 if isinstance(one, BaseException)
                 else one
-                for account, one in zip(accounts, bets, strict=True)
+                for account, own, one in zip(accounts, terms, bets, strict=True)
             ),
         )
 
