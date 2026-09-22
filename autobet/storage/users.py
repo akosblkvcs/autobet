@@ -35,6 +35,7 @@ def _to_user(row: Record) -> User:
         subject=row["subject"] or "",
         email=row["email"] or "",
         role=Role(row["role"]),
+        name=row["name"] or "",
     )
 
 
@@ -45,18 +46,23 @@ class Users:
         """Share the store's pool."""
         self._pool = pool
 
-    async def signed_in(self, subject: str, email: str, admin: bool) -> User | None:
+    async def signed_in(
+        self, subject: str, email: str, name: str, admin: bool
+    ) -> User | None:
         """The user this subject belongs to, creating the row on first sign-in."""
+        role = Role.ADMIN if admin else Role.USER
+
         async with self._pool.acquire() as conn, conn.transaction():
             known = await conn.fetchrow(
                 """
-                UPDATE users SET email = $2, role = $3, last_login_at = now()
+                UPDATE users SET email = $2, name = $3, role = $4, last_login_at = now()
                 WHERE subject = $1 AND status = 'active'
-                RETURNING id, subject, email, role
+                RETURNING id, subject, email, name, role
                 """,
                 subject,
                 email,
-                Role.ADMIN if admin else Role.USER,
+                name,
+                role,
             )
 
             if known is not None:
@@ -67,13 +73,14 @@ class Users:
 
             created = await conn.fetchrow(
                 """
-                INSERT INTO users (subject, email, role, last_login_at)
-                VALUES ($1, $2, $3, now())
-                RETURNING id, subject, email, role
+                INSERT INTO users (subject, email, name, role, last_login_at)
+                VALUES ($1, $2, $3, $4, now())
+                RETURNING id, subject, email, name, role
                 """,
                 subject,
                 email,
-                Role.ADMIN if admin else Role.USER,
+                name,
+                role,
             )
             assert created is not None
 
@@ -83,7 +90,7 @@ class Users:
         """Everyone who has ever signed in, newest first."""
         rows = await self._pool.fetch(
             """
-            SELECT id, subject, email, role, status, last_login_at
+            SELECT id, subject, email, name, role, status, last_login_at
             FROM users ORDER BY created_at DESC
             """
         )
@@ -100,7 +107,7 @@ class Users:
     async def by_id(self, user_id: int) -> User | None:
         """The user this id belongs to, or None."""
         row = await self._pool.fetchrow(
-            "SELECT id, subject, email, role FROM users WHERE id = $1", user_id
+            "SELECT id, subject, email, name, role FROM users WHERE id = $1", user_id
         )
 
         return None if row is None else _to_user(row)
@@ -108,7 +115,10 @@ class Users:
     async def matching(self, email: str) -> list[User]:
         """Everyone who signs in with this address."""
         rows = await self._pool.fetch(
-            "SELECT id, subject, email, role FROM users WHERE email = $1 ORDER BY id",
+            """
+            SELECT id, subject, email, name, role FROM users
+            WHERE email = $1 ORDER BY id
+            """,
             email,
         )
 
@@ -199,7 +209,7 @@ class Users:
         """Who this cookie belongs to, or None when it is unknown or spent."""
         row = await self._pool.fetchrow(
             """
-            SELECT u.id, u.subject, u.email, u.role, s.csrf
+            SELECT u.id, u.subject, u.email, u.name, u.role, s.csrf
             FROM sessions s
             JOIN users u ON u.id = s.user_id
             WHERE s.token_hash = $1

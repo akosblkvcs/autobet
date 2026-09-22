@@ -5,7 +5,7 @@ from datetime import datetime
 
 from asyncpg import Pool
 
-from autobet.matching import IndexedEvent, IndexedTournament
+from autobet.matching import IndexedEvent, IndexedTournament, fold
 from autobet.storage.rows import event_row, to_event
 
 _INSERT_EVENT = """
@@ -68,6 +68,19 @@ class Events:
         rows = await self._pool.fetch("SELECT * FROM events")
 
         return [to_event(row) for row in rows]
+
+    async def search(self, query: str, limit: int = 60) -> list[IndexedEvent]:
+        """Indexed fixtures whose name holds these words, soonest first."""
+        wanted = fold(query).split()
+        found = [
+            event
+            for event in await self.all()
+            if all(word in fold(event.name) for word in wanted)
+        ]
+
+        return sorted(found, key=lambda one: (one.starts_at is None, one.starts_at))[
+            :limit
+        ]
 
     async def upcoming(self) -> dict[str, int]:
         """What each tournament declared when it was walked."""

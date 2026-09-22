@@ -1,0 +1,43 @@
+{% extends "base.html" %}
+
+{% macro switch(key, value, state, label) %}
+<form class="inline switch" method="post" action="/settings">
+  <input type="hidden" name="csrf" value="{{ session.csrf }}">
+  <input type="hidden" name="key" value="{{ key }}">
+  <input type="hidden" name="value" value="{{ value }}">
+  <span class="name">{{ key.replace("_", " ") }}</span>
+  <span class="state">{{ state }}</span>
+  <button type="submit">{{ label }}</button>
+</form>
+{% endmacro %}
+
+{% macro number(key, held, fallback, mine, hint) %}
+<form class="inline" method="post" action="/settings">
+  <input type="hidden" name="csrf" value="{{ session.csrf }}">
+  <input type="hidden" name="key" value="{{ key }}">
+  <label>{{ key.replace("_", " ") }}
+    <input name="value" value="{{ held if mine else "" }}" inputmode="decimal"
+           autocomplete="off" spellcheck="false" title="{{ hint }}"
+           placeholder="default {{ fallback }}">
+  </label>
+  <button type="submit">Set</button>
+</form>
+{% endmacro %}
+
+{% block body %}
+{% if error %}<p class="error">{{ error }}</p>{% endif %}
+
+<h2>Mode</h2>
+{{ switch("mode", "live" if held.mode == "paper" else "paper", held.mode,
+          "Go live" if held.mode == "paper" else "Go paper") }}
+{{ switch("paused", "false" if held.paused else "true",
+          "paused" if held.paused else "active",
+          "Resume" if held.paused else "Pause") }}
+
+<h2>Limits <abbr title="Leave a field blank to use the default.">*</abbr></h2>
+{{ number("stake", held.stake, defaults.stake, "stake" in own,
+          "What you stake per tip; blank uses the default.") }}
+{{ number("max_odds_drop_percent", held.max_odds_drop_percent,
+          defaults.max_odds_drop_percent, "max_odds_drop_percent" in own,
+          "Abandon the bet when the live price fell this far below the tip.") }}
+{% endblock %}

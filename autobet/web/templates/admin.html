@@ -1,9 +1,15 @@
 {% extends "base.html" %}
 
 {% macro row(action, field) %}
-<form class="inline" method="post" action="{{ action }}">
+<form class="inline{{ " switch" if field.switch }}" method="post" action="{{ action }}">
   <input type="hidden" name="csrf" value="{{ session.csrf }}">
   <input type="hidden" name="key" value="{{ field.name }}">
+  {% if field.switch %}
+  <span class="name" title="{{ field.description }}">{{ field.name.replace("_", " ") }}</span>
+  <span class="state">{{ "on" if field.set else "off" }}</span>
+  <input type="hidden" name="value" value="{{ "false" if field.set else "true" }}">
+  <button type="submit">{{ "Disable" if field.set else "Enable" }}</button>
+  {% else %}
   <label>{{ field.name.replace("_", " ") }}
     <input name="value" value="{{ field.value }}" autocapitalize="off" autocomplete="off"
            spellcheck="false" title="{{ field.description }}"
@@ -11,6 +17,7 @@
            placeholder="{{ 'configured' if field.set else 'not configured' }}"{% endif %}>
   </label>
   <button type="submit">Set</button>
+  {% endif %}
 </form>
 {% endmacro %}
 
@@ -37,7 +44,7 @@
 <ul class="rows plain">
   {% for chat_id, title, enabled in channels %}
   <li>
-    <form class="inline" method="post" action="/admin/channel">
+    <form class="inline switch" method="post" action="/admin/channel">
       <input type="hidden" name="csrf" value="{{ session.csrf }}">
       <input type="hidden" name="chat_id" value="{{ chat_id }}">
       <input type="hidden" name="enabled" value="{{ "false" if enabled else "true" }}">
@@ -53,12 +60,12 @@
 <ul class="rows plain">
   {% for person in people %}
   <li>
-    <form class="inline" method="post" action="/admin/user">
+    <form class="inline switch" method="post" action="/admin/user">
       <input type="hidden" name="csrf" value="{{ session.csrf }}">
       <input type="hidden" name="user_id" value="{{ person.user.id }}">
       <input type="hidden" name="active" value="{{ "false" if person.status == "active" else "true" }}">
-      <span class="name">{{ person.user.email or person.user.subject }}</span>
-      <span class="quiet">{{ person.user.role }} &middot; {{ person.status }}</span>
+      <span class="name">{{ person.user.display }}</span>
+      <span class="quiet">{{ person.user.email }} &middot; {{ person.user.role }} &middot; {{ person.status }}</span>
       {% if person.user.id != session.user.id %}
       <button type="submit">{{ "Disable" if person.status == "active" else "Enable" }}</button>
       {% endif %}

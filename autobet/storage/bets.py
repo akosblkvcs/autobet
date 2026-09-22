@@ -29,6 +29,7 @@ def _to_verdict(row: Record) -> Verdict:
         error=row["refusal_detail"] if row["state"] == BetState.ERROR else "",
         reference=row["reference"],
         state=BetState(row["state"]),
+        stake=row["stake"],
     )
 
 
@@ -199,7 +200,9 @@ class Bets:
 
         return selection_id
 
-    async def recent(self, limit: int = 50) -> list[MessageWithTip]:
+    async def recent(
+        self, limit: int = 50, user_id: int | None = None
+    ) -> list[MessageWithTip]:
         """The most recent tips that reached a verdict, newest first."""
         rows = await self._pool.fetch(
             """
@@ -208,11 +211,15 @@ class Bets:
             FROM tips t
             JOIN messages m ON m.id = t.message_id
             JOIN channels c ON c.id = m.channel_id
-            WHERE EXISTS (SELECT 1 FROM bets b WHERE b.tip_id = t.id)
+            WHERE EXISTS (
+                SELECT 1 FROM bets b
+                WHERE b.tip_id = t.id AND ($2::bigint IS NULL OR b.user_id = $2)
+            )
             ORDER BY m.received_at DESC
             LIMIT $1
             """,
             limit,
+            user_id,
         )
         if not rows:
             return []
@@ -234,15 +241,17 @@ class Bets:
 
         bet_rows = await self._pool.fetch(
             """
-            SELECT b.tip_id, b.state, b.refusal_code, b.refusal_detail,
+            SELECT b.tip_id, b.state, b.refusal_code, b.refusal_detail, b.stake,
                    coalesce(b.reference, '') AS reference,
-                   coalesce(u.email, '') AS who
+                   coalesce(nullif(u.name, ''), u.email, '') AS who
             FROM bets b
             LEFT JOIN users u ON u.id = b.user_id
             WHERE b.tip_id = ANY($1::bigint[])
+              AND ($2::bigint IS NULL OR b.user_id = $2)
             ORDER BY b.tip_id, b.id
             """,
             [row["tip_id"] for row in rows],
+            user_id,
         )
         verdicts: dict[int, list[Verdict]] = {}
         for bet_row in bet_rows:

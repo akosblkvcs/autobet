@@ -1,0 +1,28 @@
+{% extends "base.html" %}
+
+{% block body %}
+<form class="inline" method="get" action="/events">
+  <label>fixture
+    <input name="q" value="{{ query }}" autocapitalize="off" autocomplete="off"
+           spellcheck="false" placeholder="part of a name, in any spelling">
+  </label>
+  <button type="submit">Find</button>
+</form>
+
+<p class="quiet">{{ index.events_indexed }} fixtures &middot; index built {{ index.index_built }}</p>
+
+{% if query %}
+<ul class="rows plain">
+  {% for event in found %}
+  <li class="inline">
+    <span class="name">{{ event.name }}</span>
+    <span class="quiet">{{ event.sport }}</span>
+    <span class="quiet">{{ event.starts_at.strftime("%m-%d %H:%M") if event.starts_at else "no time" }}</span>
+    {% if event.started %}<span class="drop">started</span>{% endif %}
+  </li>
+  {% else %}
+  <li class="quiet">Nothing indexed under that name.</li>
+  {% endfor %}
+</ul>
+{% endif %}
+{% endblock %}

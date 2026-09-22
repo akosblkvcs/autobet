@@ -33,7 +33,7 @@ _NUMERIC = re.compile(r"[-+]?\d+\.?\d*")
 _TRANSLITERATED = str.maketrans({"j": "i", "y": "i", "w": "v", "k": "c"})
 
 
-def _fold(text: str) -> str:
+def fold(text: str) -> str:
     """Strip accents, case and transliteration differences."""
     stripped = unicodedata.normalize("NFKD", text)
     plain = "".join(c for c in stripped if not unicodedata.combining(c))
@@ -43,7 +43,7 @@ def _fold(text: str) -> str:
 
 def _folded(*words: str) -> tuple[str, ...]:
     """Fold a vocabulary at import, so lookups compare like with like."""
-    return tuple(_fold(word) for word in words)
+    return tuple(fold(word) for word in words)
 
 
 _SELECTION_KEYS = dict(
@@ -143,7 +143,7 @@ def two_sides(name: str) -> tuple[str, str] | None:
 
 def _score(query: str, aliases: Sequence[str]) -> float:
     """How well one competitor matches any name the feed has for that side."""
-    folded = _fold(query)
+    folded = fold(query)
 
     return max(
         (
@@ -199,7 +199,7 @@ class IndexedTournament:
 def _aliases(records: Sequence[dict[str, Any]], side: str) -> tuple[str, ...]:
     """Every name the feed gave one side of a fixture, folded and deduplicated."""
     names = {
-        _fold(str(record.get(key) or ""))
+        fold(str(record.get(key) or ""))
         for record in records
         for key in (f"{side}ParticipantName", f"{side}ShortParticipantName")
     }
@@ -249,7 +249,7 @@ def find_event(
 
 def _parts(selection: str) -> list[str]:
     """The outcomes a selection names, one per part."""
-    folded = _fold(selection)
+    folded = fold(selection)
 
     if _SHORTHAND.fullmatch(folded):
         return list(folded)
@@ -259,7 +259,7 @@ def _parts(selection: str) -> list[str]:
 
 def _piece(text: str, event: IndexedEvent) -> str | None:
     """Which side of the fixture one part of a selection names."""
-    folded = _fold(text)
+    folded = fold(text)
 
     if folded in _DRAW_WORDS:
         return "draw"
@@ -307,9 +307,9 @@ def _backs(
     if sided is not None and _line(sided.group(1)) not in _lines_named(leg):
         return None
 
-    shown = _fold(_normalise(str(outcome.get("translatedName") or "")))
+    shown = fold(_normalise(str(outcome.get("translatedName") or "")))
 
-    if shown and shown == _fold(_normalise(leg.selection)):
+    if shown and shown == fold(_normalise(leg.selection)):
         return 0
 
     marked = outcome.get("code") or ""
@@ -328,7 +328,7 @@ def _backs(
 
 def _selection(leg: TipLeg, event: IndexedEvent) -> tuple[str | None, str | None]:
     """What the leg backs, as a header key and as an outcome code."""
-    folded = _fold(leg.selection)
+    folded = fold(leg.selection)
     pieces = [_piece(part, event) for part in _parts(leg.selection)]
     named = [piece for piece in pieces if piece is not None]
     whole: frozenset[str] = frozenset(named) if len(named) == len(pieces) else frozenset()

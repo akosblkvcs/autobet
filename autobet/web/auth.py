@@ -59,6 +59,7 @@ class Profile(BaseModel):
 
     sub: str
     email: str = ""
+    name: str = ""
 
 
 class Flow(BaseModel):
@@ -129,8 +130,8 @@ class Provider:
 
         return f"{found.authorization_endpoint}?{query}"
 
-    async def identify(self, code: str, verifier: str, nonce: str) -> tuple[str, str]:
-        """Redeem the code and return the subject and email it stands for."""
+    async def identify(self, code: str, verifier: str, nonce: str) -> Profile:
+        """Redeem the code and return who the provider says it stands for."""
         settings = self._settings
 
         async with httpx2.AsyncClient(timeout=_TIMEOUT) as client:
@@ -177,7 +178,7 @@ class Provider:
         if profile.sub != claims.sub:
             raise SignInError("the profile and the token name different people")
 
-        return profile.sub, profile.email
+        return profile
 
 
 async def signed_in(request: Request, store: Store) -> SignedIn | None:

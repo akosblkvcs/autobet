@@ -60,6 +60,10 @@ class Accounts:
             slug,
         )
 
+    async def of(self, user_id: int, slug: str) -> Account | None:
+        """This person's account at one book, or None when they hold none."""
+        return next((one for one in await self.all(slug) if one.user_id == user_id), None)
+
     async def active(self, slug: str) -> list[Account]:
         """The accounts a tip can be staked through, oldest first."""
         return [one for one in await self.all(slug) if one.status == "active"]

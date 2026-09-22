@@ -1,4 +1,4 @@
-"""The dashboard: what the service is doing, for everyone signed in."""
+"""The index as a page: is this fixture on the board, and how fresh is that."""
 
 # pyright: reportUnusedFunction=false
 
@@ -9,28 +9,25 @@ from autobet.web.context import Context, templates, whoever
 
 
 def router(context: Context) -> APIRouter:
-    """Build the / route."""
+    """Build the /events route."""
     api = APIRouter()
 
-    @api.get("/", response_class=HTMLResponse)
-    async def index(request: Request) -> Response:
+    @api.get("/events", response_class=HTMLResponse)
+    async def events(request: Request, q: str = "") -> Response:
         session = await whoever(request, context.store)
 
         if isinstance(session, Response):
             return session
 
-        reports = context.store.reports
-        latency = await reports.latency_percentiles()
+        found = await context.store.events.search(q) if q.strip() else []
 
         return templates.TemplateResponse(
             request,
-            "dashboard.html",
+            "events.html",
             {
-                "service": context.status()
-                | {"channels": list(context.telegram.channels)},
+                "query": q,
+                "found": found,
                 "index": await context.index(),
-                "limits": await context.limits(),
-                "totals": await reports.totals() | {"transport_latency_ms": latency},
                 "session": session,
             },
         )

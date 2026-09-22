@@ -89,11 +89,17 @@ class User:
     subject: str
     email: str
     role: Role
+    name: str = ""
 
     @property
     def is_admin(self) -> bool:
         """Whether this user may change settings and see everyone's bets."""
         return self.role is Role.ADMIN
+
+    @property
+    def display(self) -> str:
+        """What a page calls this person: their name, else what identifies them."""
+        return self.name or self.email or self.subject
 
 
 @dataclass(frozen=True, slots=True)
@@ -208,6 +214,7 @@ class Verdict:
     error: str = ""
     reference: str = ""
     state: BetState = BetState.PLACED
+    stake: Decimal = Decimal("0")
 
 
 @dataclass(frozen=True, slots=True)
