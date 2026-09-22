@@ -5,12 +5,13 @@ import hashlib
 import json
 import secrets
 import time
+import unicodedata
 
 import httpx2
 import structlog
 from fastapi import Request
 from fastapi.responses import RedirectResponse
-from pydantic import BaseModel, ValidationError
+from pydantic import BaseModel, ValidationError, field_validator
 
 from autobet.config import Settings
 from autobet.models import SignedIn
@@ -19,6 +20,7 @@ from autobet.storage.users import SESSION_DAYS
 
 log = structlog.get_logger(__name__)
 
+_INVISIBLE = frozenset({"Cc", "Cf"})
 SESSION_COOKIE = "autobet_session"
 _FLOW_COOKIE = "autobet_flow"
 _FLOW_MAX_AGE = 600
@@ -59,6 +61,15 @@ class Profile(BaseModel):
 
     sub: str
     email: str = ""
+    name: str = ""
+
+    @field_validator("email", "name")
+    @classmethod
+    def _printable(cls, value: str) -> str:
+        """The directory owns these and a terminal prints them; see CLAUDE.md."""
+        return "".join(
+            one for one in value if unicodedata.category(one) not in _INVISIBLE
+        ).strip()
 
 
 class Flow(BaseModel):
@@ -129,8 +140,8 @@ class Provider:
 
         return f"{found.authorization_endpoint}?{query}"
 
-    async def identify(self, code: str, verifier: str, nonce: str) -> tuple[str, str]:
-        """Redeem the code and return the subject and email it stands for."""
+    async def identify(self, code: str, verifier: str, nonce: str) -> Profile:
+        """Redeem the code and return who the provider says it stands for."""
         settings = self._settings
 
         async with httpx2.AsyncClient(timeout=_TIMEOUT) as client:
@@ -177,7 +188,7 @@ class Provider:
         if profile.sub != claims.sub:
             raise SignInError("the profile and the token name different people")
 
-        return profile.sub, profile.email
+        return profile
 
 
 async def signed_in(request: Request, store: Store) -> SignedIn | None:

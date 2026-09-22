@@ -11,10 +11,14 @@
   {% if session is defined and session %}
   <nav>
     <a href="/">dashboard</a>
-    <a href="/tips">tips</a>
-    {% if session.user.is_admin %}<a href="/admin">admin</a>{% endif %}
+    <a href="/bets">bets</a>
+    <a href="/events">events</a>
+    <a href="/settings">settings</a>
+    <a href="/account">account</a>
+    {% if session.user.is_admin %}<a href="/admin/bets">all bets</a>
+    <a href="/admin">admin</a>{% endif %}
   </nav>
-  <span class="who quiet">{{ session.user.email or session.user.subject }}</span>
+  <span class="who quiet">{{ session.user.display }}</span>
   {% endif %}
 </header>
 

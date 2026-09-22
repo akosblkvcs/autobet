@@ -1,0 +1,39 @@
+{% extends "base.html" %}
+
+{% block body %}
+{% if error %}<p class="error">{{ error }}</p>{% endif %}
+
+<h2>tippmixpro</h2>
+{% if account %}
+<dl class="stats">
+  <dt>username</dt><dd>{{ account.username }}</dd>
+  <dt>status</dt><dd>{{ account.status }}</dd>
+  <dt>last login</dt>
+  <dd>{{ account.last_login_at.strftime("%Y-%m-%d %H:%M") if account.last_login_at else "never" }}</dd>
+  {% if account.last_error %}<dt>last error</dt><dd class="drop">{{ account.last_error }}</dd>{% endif %}
+</dl>
+{% else %}
+<p class="quiet">No credentials stored, so no tip is staked for you.</p>
+{% endif %}
+
+<h2>{{ "Replace" if account else "Add" }} <abbr title="Sealed before it reaches the database, and never shown again.">*</abbr></h2>
+<form class="inline" method="post" action="/account">
+  <input type="hidden" name="csrf" value="{{ session.csrf }}">
+  <label>username
+    <input name="username" value="{{ account.username if account else "" }}"
+           autocapitalize="off" autocomplete="off" spellcheck="false">
+  </label>
+  <label>password
+    <input name="password" type="password" autocomplete="new-password"
+           placeholder="{{ "stored" if account else "not stored" }}">
+  </label>
+  <button type="submit">Save</button>
+</form>
+
+{% if account %}
+<form class="inline" method="post" action="/account/forget">
+  <input type="hidden" name="csrf" value="{{ session.csrf }}">
+  <button type="submit">Forget</button>
+</form>
+{% endif %}
+{% endblock %}

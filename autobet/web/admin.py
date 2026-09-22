@@ -54,6 +54,7 @@ def _fields(held: BaseModel) -> list[dict[str, JsonValue]]:
             "value": "" if name in SECRETS else str(getattr(held, name)),
             "secret": name in SECRETS,
             "set": bool(getattr(held, name)),
+            "switch": isinstance(getattr(held, name), bool),
             "description": field.description or "",
         }
         for name, field in type(held).model_fields.items()
@@ -98,6 +99,19 @@ def router(context: Context) -> APIRouter:
             guarded
             if isinstance(guarded, Response)
             else await _page(request, context, guarded)
+        )
+
+    @api.get("/bets", response_class=HTMLResponse)
+    async def everyones(request: Request) -> Response:
+        guarded = await admin_only(request, store)
+
+        if isinstance(guarded, Response):
+            return guarded
+
+        return templates.TemplateResponse(
+            request,
+            "all_bets.html",
+            {"rows": await store.bets.recent(50), "session": guarded},
         )
 
     @api.post("/setting")

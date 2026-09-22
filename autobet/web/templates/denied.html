@@ -4,6 +4,6 @@
 <h1>No access</h1>
 
 <p>{% if session is defined and session %}You are signed in as
-{{ session.user.email or session.user.subject }}, but {{ reason }}.
+{{ session.user.display }}, but {{ reason }}.
 {% else %}{{ reason|capitalize }}.{% endif %}</p>
 {% endblock %}

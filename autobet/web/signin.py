@@ -50,7 +50,7 @@ def router(context: Context) -> APIRouter:
             if not code or not secrets.compare_digest(state, started.state):
                 raise SignInError("the answer did not match the sign-in")
 
-            subject, email = await context.provider.identify(
+            profile = await context.provider.identify(
                 code, started.verifier, started.nonce
             )
         except SignInError as error:
@@ -60,11 +60,13 @@ def router(context: Context) -> APIRouter:
                 request, "signin_failed.html", {"reason": str(error)}, status_code=403
             )
 
-        admin = email in context.settings.admin_emails
-        user = await context.store.users.signed_in(subject, email, admin)
+        admin = profile.email in context.settings.admin_emails
+        user = await context.store.users.signed_in(
+            profile.sub, profile.email, profile.name, admin
+        )
 
         if user is None:
-            log.warning("sign_in_refused", subject=subject)
+            log.warning("sign_in_refused", subject=profile.sub)
 
             return templates.TemplateResponse(
                 request,

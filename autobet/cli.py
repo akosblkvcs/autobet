@@ -206,7 +206,7 @@ async def cmd_account(settings: Settings, action: str | None, whom: str | None) 
     for account in accounts:
         owner = await store.users.by_id(account.user_id)
         print(
-            f"{account.user_id:>4}  {(owner.email if owner else '?'):<28} "
+            f"{account.user_id:>4}  {(owner.display if owner else '?'):<28} "
             f"{account.username:<20} {account.status}"
         )
 
@@ -240,7 +240,7 @@ async def cmd_user(
         own = await store.users.stored_policy(person.user.id)
         terms = held.over(policy)
         print(
-            f"{person.user.id:>4}  {(person.user.email or person.user.subject):<28} "
+            f"{person.user.id:>4}  {person.user.display:<28} "
             f"{terms.mode:<6} {'paused' if terms.paused else 'active':<7} "
             f"stake {_shown(terms.stake, 'stake' in own):<9} "
             f"drop {_shown(terms.max_odds_drop_percent, 'max_odds_drop_percent' in own)}"
