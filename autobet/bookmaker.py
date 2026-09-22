@@ -22,7 +22,7 @@ from autobet.models import (
     Tip,
     utcnow,
 )
-from autobet.policy import Policy
+from autobet.policy import Mode, Policy, Terms
 from autobet.session import mint_ce_session
 from autobet.storage import Store
 from autobet.storage.accounts import Account
@@ -49,7 +49,7 @@ class Bookmaker:
         self._index = Index(store)
 
     async def place(self, tip: Tip, policy: Policy) -> Placement:
-        """Resolve the tip once, then stake it through every eligible account."""
+        """Resolve the tip once, then stake it on each account's own terms."""
         book = await self._store.books.config()
 
         async with connected(book) as connection:
@@ -64,68 +64,91 @@ class Bookmaker:
             reference="",
             placed_at=utcnow(),
             resolutions=tuple(resolutions),
-            refusal=self._refuse(tip, offers, policy),
+            refusal=self._mismatched(tip, offers, policy.mismatch_rise_percent),
         )
         accounts = await self._store.accounts.active(TIPPMIXPRO)
 
-        results: list[BetResult] = []
+        log.info(
+            "tip_resolved",
+            legs=len(tip.legs),
+            resolved=sum(offer is not None for offer in offers),
+            accounts=len(accounts),
+            refusal=None if shared.refusal is None else shared.refusal.code,
+            tipster_odds=None if tip.odds is None else round(tip.odds, 3),
+        )
 
         if not accounts:
-            log.info("no_account", legs=len(tip.legs))
-
-            results = [
-                replace(
-                    shared,
-                    refusal=shared.refusal
-                    or Refusal(RefusalCode.NO_ACCOUNT, "nobody holds credentials"),
-                )
-            ]
-        elif shared.refusal is not None:
-            log.info(
-                "bet_refused",
-                refusal=shared.refusal.code,
-                detail=shared.refusal.detail,
-                legs=len(tip.legs),
-                tipster_odds=None if tip.odds is None else round(tip.odds, 3),
+            return Placement(
+                resolutions=shared.resolutions,
+                results=(
+                    replace(
+                        shared,
+                        refusal=shared.refusal
+                        or Refusal(RefusalCode.NO_ACCOUNT, "nobody holds credentials"),
+                    ),
+                ),
             )
 
-            results = [replace(shared, user_id=account.user_id) for account in accounts]
-        elif self._dry_run:
-            live, _ = _priced(tip, [offer for offer in offers if offer is not None])
+        held = await self._store.users.policies([account.user_id for account in accounts])
+        terms = [held[account.user_id].over(policy) for account in accounts]
+        bets = await asyncio.gather(
+            *(
+                self._bet(book, tip, shared, own, account)
+                for own, account in zip(terms, accounts, strict=True)
+            ),
+            return_exceptions=True,
+        )
 
-            log.info(
-                "tip_observed",
-                legs=len(tip.legs),
-                resolved=sum(offer is not None for offer in offers),
-                accounts=len(accounts),
-                stake=tip.stake,
-                live_odds=round(live, 3),
-            )
-
-            results = [
+        return Placement(
+            resolutions=shared.resolutions,
+            results=tuple(
                 replace(
                     shared,
                     user_id=account.user_id,
-                    refusal=Refusal(RefusalCode.DRY_RUN, f"{tip.stake} at {live:.3f}"),
+                    stake=own.stake,
+                    error=type(one).__name__,
                 )
-                for account in accounts
-            ]
-        else:
-            staked = await asyncio.gather(
-                *(
-                    self._staked(book, tip, policy, shared, account)
-                    for account in accounts
-                ),
-                return_exceptions=True,
-            )
-            results = [
-                replace(shared, user_id=account.user_id, error=type(one).__name__)
                 if isinstance(one, BaseException)
                 else one
-                for account, one in zip(accounts, staked, strict=True)
-            ]
+                for account, own, one in zip(accounts, terms, bets, strict=True)
+            ),
+        )
 
-        return Placement(resolutions=shared.resolutions, results=tuple(results))
+    async def _bet(
+        self,
+        book: Tippmixpro,
+        tip: Tip,
+        shared: BetResult,
+        terms: Terms,
+        account: Account,
+    ) -> BetResult:
+        """One account's verdict: the tip's own faults, then this person's terms."""
+        result = replace(shared, user_id=account.user_id, stake=terms.stake)
+
+        if shared.refusal is not None:
+            return result
+
+        if terms.paused:
+            return replace(
+                result, refusal=Refusal(RefusalCode.USER_PAUSED, "paused by the user")
+            )
+
+        placeable = [offer for offer in shared.offers if offer is not None]
+        beyond = self._beyond_limits(tip, placeable, terms)
+
+        if beyond is not None:
+            return replace(result, refusal=beyond)
+
+        live, _ = _priced(tip, placeable)
+        unsent = f"{terms.stake} at {live:.3f}"
+
+        if self._dry_run:
+            return replace(result, refusal=Refusal(RefusalCode.DRY_RUN, unsent))
+
+        if terms.mode is Mode.PAPER:
+            return replace(result, refusal=Refusal(RefusalCode.PAPER_MODE, unsent))
+
+        return await self._staked(book, tip, terms, shared, account)
 
     def _report(self, tip: Tip, offers: list[LegOffer | None]) -> None:
         """Say what each leg resolved to, once, however many accounts follow."""
@@ -150,18 +173,18 @@ class Bookmaker:
         self,
         book: Tippmixpro,
         tip: Tip,
-        policy: Policy,
+        terms: Terms,
         shared: BetResult,
         account: Account,
     ) -> BetResult:
         """One account's bet: its own socket, its own session, its own price."""
-        result = replace(shared, user_id=account.user_id)
+        result = replace(shared, user_id=account.user_id, stake=terms.stake)
 
         async with connected(book) as connection:
             await connection.authenticate(await self._minted(book, account))
 
             repriced = await self._repriced(connection, list(shared.offers))
-            moved = self._refuse(tip, repriced, policy)
+            moved = self._refuse(tip, repriced, terms)
             restated = tuple(
                 LegResolution(SelectionStatus.NO_ODDS)
                 if offer is None and resolution.offer is not None
@@ -182,7 +205,7 @@ class Bookmaker:
                 return replace(result, refusal=moved)
 
             answer = await connection.place_bet(
-                [offer for offer in repriced if offer is not None], tip.stake
+                [offer for offer in repriced if offer is not None], terms.stake
             )
 
         reference = str(answer.get("betId") or answer.get("id") or "")
@@ -195,7 +218,7 @@ class Bookmaker:
             )
 
         log.info(
-            "bet_accepted", reference=reference, stake=tip.stake, user=account.user_id
+            "bet_accepted", reference=reference, stake=terms.stake, user=account.user_id
         )
 
         return replace(result, reference=reference)
@@ -221,18 +244,18 @@ class Bookmaker:
         return await mint_ce_session(book, username, password)
 
     def _refuse(
-        self, tip: Tip, offers: list[LegOffer | None], policy: Policy
+        self, tip: Tip, offers: list[LegOffer | None], terms: Terms
     ) -> Refusal | None:
-        """Say why this tip must not be staked, or None when it may be."""
-        mismatched = self._mismatched(tip, offers, policy)
+        """Say why this person must not stake this tip, or None when they may."""
+        mismatched = self._mismatched(tip, offers, terms.mismatch_rise_percent)
 
         if mismatched is not None:
             return mismatched
 
-        return self._beyond_limits(tip, [o for o in offers if o is not None], policy)
+        return self._beyond_limits(tip, [o for o in offers if o is not None], terms)
 
     def _mismatched(
-        self, tip: Tip, offers: list[LegOffer | None], policy: Policy
+        self, tip: Tip, offers: list[LegOffer | None], rise_percent: int
     ) -> Refusal | None:
         """Signs this is not the bet the tipster sent: correctness, not policy."""
         placeable = [offer for offer in offers if offer is not None]
@@ -249,26 +272,26 @@ class Bookmaker:
 
         _, drop = _priced(tip, placeable)
 
-        if drop is not None and -drop > policy.mismatch_rise_percent:
+        if drop is not None and -drop > rise_percent:
             return Refusal(
                 RefusalCode.ODDS_RISE,
-                f"{-drop:.1f}% above the tipster, limit {policy.mismatch_rise_percent}%",
+                f"{-drop:.1f}% above the tipster, limit {rise_percent}%",
             )
 
         return None
 
     def _beyond_limits(
-        self, tip: Tip, offers: list[LegOffer], policy: Policy
+        self, tip: Tip, offers: list[LegOffer], terms: Terms
     ) -> Refusal | None:
-        """The limits a per-user setting will override in Phase C."""
+        """The limits this person owns, theirs to loosen or tighten."""
         live, drop = _priced(tip, offers)
 
         if drop is None:
             log.info("odds_drop_unchecked", live=round(live, 3))
-        elif drop > policy.max_odds_drop_percent:
+        elif drop > terms.max_odds_drop_percent:
             return Refusal(
                 RefusalCode.ODDS_DROP,
-                f"{drop:.1f}%, limit {policy.max_odds_drop_percent:.0f}%",
+                f"{drop:.1f}%, limit {terms.max_odds_drop_percent:.0f}%",
             )
 
         return None

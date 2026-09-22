@@ -5,6 +5,7 @@
 
 import argparse
 import asyncio
+from collections.abc import Callable, Coroutine
 from getpass import getpass
 
 import structlog
@@ -20,6 +21,7 @@ from autobet.models import User
 from autobet.policy import SECRETS
 from autobet.storage import Store
 from autobet.storage.config import MODELS
+from autobet.storage.rows import JsonValue
 from autobet.telegram import SessionError, build_client, connect_authorized
 
 log = structlog.get_logger(__name__)
@@ -48,6 +50,11 @@ def build_parser() -> argparse.ArgumentParser:
     arming = book.add_mutually_exclusive_group()
     arming.add_argument("--enable", action="store_true")
     arming.add_argument("--disable", action="store_true")
+
+    user = sub.add_parser("user")
+    user.add_argument("whom", nargs="?")
+    user.add_argument("key", nargs="?")
+    user.add_argument("value", nargs="?")
 
     account = sub.add_parser("account")
     account.add_argument("action", nargs="?", choices=("add", "forget"))
@@ -206,6 +213,55 @@ async def cmd_account(settings: Settings, action: str | None, whom: str | None) 
     await store.close()
 
 
+async def cmd_user(
+    settings: Settings, whom: str | None, key: str | None, value: str | None
+) -> None:
+    """Show what each person stakes and on what terms, or change one of them."""
+    store = await Store.connect(settings.database_url)
+
+    if whom is not None and key is not None and value is not None:
+        user = await _person(store, whom)
+
+        if user is None:
+            await store.close()
+
+            return
+
+        await store.users.set_policy(user.id, key, _own(value))
+
+    policy = await store.config.policy()
+    people = await store.users.all()
+
+    if not people:
+        print("nobody has signed in yet")
+
+    for person in people:
+        held = await store.users.policy(person.user.id)
+        own = await store.users.stored_policy(person.user.id)
+        terms = held.over(policy)
+        print(
+            f"{person.user.id:>4}  {(person.user.email or person.user.subject):<28} "
+            f"{terms.mode:<6} {'paused' if terms.paused else 'active':<7} "
+            f"stake {_shown(terms.stake, 'stake' in own):<9} "
+            f"drop {_shown(terms.max_odds_drop_percent, 'max_odds_drop_percent' in own)}"
+        )
+
+    if people:
+        print("* follows the service; `user <whom> <key> default` gives it back")
+
+    await store.close()
+
+
+def _own(raw: str) -> JsonValue:
+    """What was typed, with `default` meaning "follow the service"."""
+    return None if raw in ("default", "service") else raw
+
+
+def _shown(value: object, own: bool) -> str:
+    """One of somebody's terms, starred when it is the service's rather than theirs."""
+    return f"{value}" if own else f"{value}*"
+
+
 async def cmd_channel(
     settings: Settings, action: str | None, chat_id: int | None
 ) -> None:
@@ -264,6 +320,27 @@ async def cmd_markets(settings: Settings) -> None:
     await store.close()
 
 
+def _commands(
+    settings: Settings, args: argparse.Namespace
+) -> dict[str, Callable[[], Coroutine[object, object, None]]]:
+    """Every command as a thunk, so dispatch is a lookup and not a ladder."""
+    return {
+        "run": lambda: run_service(settings),
+        "login": lambda: cmd_login(settings),
+        "chats": lambda: cmd_chats(settings),
+        "migrate": lambda: cmd_migrate(settings),
+        "markets": lambda: cmd_markets(settings),
+        "index": lambda: cmd_index(settings),
+        "config": lambda: cmd_config(settings, args.key, args.value, args.reveal),
+        "book": lambda: cmd_book(
+            settings, args.key, args.value, args.enable, args.disable
+        ),
+        "user": lambda: cmd_user(settings, args.whom, args.key, args.value),
+        "account": lambda: cmd_account(settings, args.action, args.whom),
+        "channel": lambda: cmd_channel(settings, args.action, args.chat_id),
+    }
+
+
 def main(argv: list[str] | None = None) -> int:
     """Parse arguments and dispatch to the selected command."""
     args = build_parser().parse_args(argv)
@@ -273,31 +350,7 @@ def main(argv: list[str] | None = None) -> int:
     )
 
     try:
-        match args.command:
-            case "run":
-                asyncio.run(run_service(settings))
-            case "login":
-                asyncio.run(cmd_login(settings))
-            case "chats":
-                asyncio.run(cmd_chats(settings))
-            case "migrate":
-                asyncio.run(cmd_migrate(settings))
-            case "markets":
-                asyncio.run(cmd_markets(settings))
-            case "index":
-                asyncio.run(cmd_index(settings))
-            case "config":
-                asyncio.run(cmd_config(settings, args.key, args.value, args.reveal))
-            case "book":
-                asyncio.run(
-                    cmd_book(settings, args.key, args.value, args.enable, args.disable)
-                )
-            case "account":
-                asyncio.run(cmd_account(settings, args.action, args.whom))
-            case "channel":
-                asyncio.run(cmd_channel(settings, args.action, args.chat_id))
-            case _:
-                pass
+        asyncio.run(_commands(settings, args)[args.command]())
     except SessionError as error:
         log.error(
             "session_unusable",

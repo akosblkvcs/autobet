@@ -186,11 +186,10 @@ class LegResolution:
 
 @dataclass(frozen=True, slots=True)
 class Tip:
-    """A bet suggestion extracted from a message."""
+    """A bet suggestion extracted from a message, shared by everyone betting it."""
 
     legs: tuple[TipLeg, ...]
     odds: float | None
-    stake: Decimal
     message: IncomingMessage
 
 
@@ -237,6 +236,9 @@ class BetResult:
     error: str = ""
     user_id: int | None = None
     """Whose bet this is. None while nobody holds credentials for the book."""
+
+    stake: Decimal = Decimal("0")
+    """What this account staked, or would have. Zero only on the unowned row."""
 
     @property
     def offers(self) -> tuple[LegOffer | None, ...]:

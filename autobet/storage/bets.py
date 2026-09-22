@@ -160,7 +160,7 @@ class Bets:
             result.state,
             None if result.refusal is None else result.refusal.code,
             result.refusal.detail if result.refusal else result.error,
-            tip.stake,
+            result.stake,
             tip.odds,
             result.reference,
             result.placed_at,
