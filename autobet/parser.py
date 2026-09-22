@@ -1,7 +1,6 @@
 """Turn a message into a tip by reading its betslip screenshot."""
 
 import base64
-from decimal import Decimal
 from pathlib import Path
 from typing import Literal
 
@@ -141,7 +140,6 @@ def _content(
 
 async def parse_tip(
     message: IncomingMessage,
-    stake: Decimal,
     *,
     claude: AsyncAnthropic,
     text_prompt: str,
@@ -150,7 +148,6 @@ async def parse_tip(
 
     Args:
         message: The archived message: its screenshot if it has one, else its text.
-        stake: What to stake, since the tip does not decide that.
         claude: Client used for the extraction.
         text_prompt: The prompt for a text tip, from :func:`build_text_prompt`.
 
@@ -205,6 +202,5 @@ async def parse_tip(
     return Tip(
         legs=legs,
         odds=combined(legs),
-        stake=stake,
         message=message,
     )

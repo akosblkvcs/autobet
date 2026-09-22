@@ -1,6 +1,8 @@
-"""What the `settings` table holds: the betting limits and the service's keys."""
+"""What the `settings` table holds, and what each person overrides of it."""
 
+from dataclasses import dataclass
 from decimal import Decimal
+from enum import StrEnum
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -25,6 +27,63 @@ class Policy(BaseModel):
         gt=0,
         description="A price this far above the tip is a different bet, not a bargain.",
     )
+
+
+class Mode(StrEnum):
+    """Whether somebody's bets reach the book at all."""
+
+    PAPER = "paper"
+    LIVE = "live"
+
+
+@dataclass(frozen=True, slots=True)
+class Terms:
+    """What one person's bet is judged against: no blanks left to resolve."""
+
+    mode: Mode
+    paused: bool
+    stake: Decimal
+    max_odds_drop_percent: float
+    mismatch_rise_percent: int
+
+
+class UserPolicy(BaseModel):
+    """One person's own terms. A field left None inherits the service default."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    mode: Mode = Field(
+        default=Mode.PAPER,
+        description="paper resolves, prices and records without sending anything.",
+    )
+    paused: bool = Field(
+        default=False,
+        description="Stake nothing for this person until they say otherwise.",
+    )
+    stake: Decimal | None = Field(
+        default=None,
+        ge=100,
+        description="What this person stakes per tip; blank follows the service.",
+    )
+    max_odds_drop_percent: float | None = Field(
+        default=None,
+        gt=0,
+        description="This person's drop limit; blank follows the service.",
+    )
+
+    def over(self, policy: Policy) -> Terms:
+        """These terms with the service's defaults filled in where none was set."""
+        return Terms(
+            mode=self.mode,
+            paused=self.paused,
+            stake=policy.stake if self.stake is None else self.stake,
+            max_odds_drop_percent=(
+                policy.max_odds_drop_percent
+                if self.max_odds_drop_percent is None
+                else self.max_odds_drop_percent
+            ),
+            mismatch_rise_percent=policy.mismatch_rise_percent,
+        )
 
 
 SECRETS = frozenset({"telegram_api_hash", "claude_api_key"})

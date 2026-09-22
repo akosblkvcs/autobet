@@ -43,6 +43,9 @@ config:
 account:
 	uv run python -m autobet account $(ARGS)
 
+user:
+	uv run python -m autobet user $(ARGS)
+
 book:
 	uv run python -m autobet book $(ARGS)
 
