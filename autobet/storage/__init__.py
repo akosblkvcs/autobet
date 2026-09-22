@@ -18,7 +18,7 @@ from autobet.storage.users import Users
 class Store:
     """The pool every repository shares, and the repositories themselves."""
 
-    def __init__(self, pool: Pool, key: str = "") -> None:
+    def __init__(self, pool: Pool, key: str) -> None:
         """Wrap an open pool; use :meth:`connect` rather than calling this."""
         self._pool = pool
         self.accounts = Accounts(pool, key)
@@ -31,7 +31,7 @@ class Store:
         self.users = Users(pool)
 
     @classmethod
-    async def connect(cls, dsn: str, key: str = "") -> Store:
+    async def connect(cls, dsn: str, key: str) -> Store:
         """Open the pool and bring the schema up to date."""
         pool = await create_pool(
             dsn, min_size=1, max_size=5, max_inactive_connection_lifetime=300

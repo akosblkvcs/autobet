@@ -1,29 +1,38 @@
 """The event index the scheduled walk writes and every tip reads."""
 
-from collections.abc import Mapping, Sequence
+from collections.abc import Sequence
 from datetime import datetime
 
 from asyncpg import Pool
 
-from autobet.matching import IndexedEvent
+from autobet.matching import IndexedEvent, IndexedTournament
 from autobet.storage.rows import event_row, to_event
 
 _INSERT_EVENT = """
     INSERT INTO events (
-        id, tournament_id, name, sport, home_id, away_id, home, away, starts_at
+        id, tournament_id, name, sport, home_id, away_id, home, away, starts_at,
+        markets
     )
-    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
     ON CONFLICT (id) DO UPDATE SET
         tournament_id = EXCLUDED.tournament_id,
         name = EXCLUDED.name, sport = EXCLUDED.sport,
         home_id = EXCLUDED.home_id, away_id = EXCLUDED.away_id,
         home = EXCLUDED.home, away = EXCLUDED.away,
-        starts_at = EXCLUDED.starts_at, indexed_at = now()
+        starts_at = EXCLUDED.starts_at, markets = EXCLUDED.markets,
+        indexed_at = now()
 """
 _INSERT_TOURNAMENT = """
-    INSERT INTO tournaments (id, upcoming) VALUES ($1, $2)
-    ON CONFLICT (id) DO UPDATE SET upcoming = EXCLUDED.upcoming, indexed_at = now()
+    INSERT INTO tournaments (id, sport_id, upcoming) VALUES ($1, $2, $3)
+    ON CONFLICT (id) DO UPDATE SET sport_id = EXCLUDED.sport_id,
+                                   upcoming = EXCLUDED.upcoming,
+                                   indexed_at = now()
 """
+
+
+def _rows(walked: Sequence[IndexedTournament]) -> list[tuple[str, str, int]]:
+    """Each walked tournament as the insert's arguments."""
+    return [(one.id, one.sport_id, one.upcoming) for one in walked]
 
 
 class Events:
@@ -34,23 +43,23 @@ class Events:
         self._pool = pool
 
     async def replace(
-        self, events: Sequence[IndexedEvent], upcoming: Mapping[str, int]
+        self, events: Sequence[IndexedEvent], walked: Sequence[IndexedTournament]
     ) -> None:
         """Write a whole walk of the board, replacing the one before it."""
         async with self._pool.acquire() as conn, conn.transaction():
             await conn.execute("TRUNCATE events, tournaments")
-            await conn.executemany(_INSERT_TOURNAMENT, list(upcoming.items()))
+            await conn.executemany(_INSERT_TOURNAMENT, _rows(walked))
             await conn.executemany(_INSERT_EVENT, [event_row(event) for event in events])
 
     async def update(
-        self, events: Sequence[IndexedEvent], upcoming: Mapping[str, int]
+        self, events: Sequence[IndexedEvent], walked: Sequence[IndexedTournament]
     ) -> None:
         """Replace the tournaments a re-walk re-read, leaving the rest alone."""
         async with self._pool.acquire() as conn, conn.transaction():
-            await conn.executemany(_INSERT_TOURNAMENT, list(upcoming.items()))
+            await conn.executemany(_INSERT_TOURNAMENT, _rows(walked))
             await conn.execute(
                 "DELETE FROM events WHERE tournament_id = ANY($1::text[])",
-                list(upcoming),
+                [tournament.id for tournament in walked],
             )
             await conn.executemany(_INSERT_EVENT, [event_row(event) for event in events])
 
@@ -65,6 +74,19 @@ class Events:
         rows = await self._pool.fetch("SELECT id, upcoming FROM tournaments")
 
         return {row["id"]: row["upcoming"] for row in rows}
+
+    async def sports_of(self, sport: str) -> list[str]:
+        """The feed ids a sport's fixtures came from, as the walk recorded them."""
+        rows = await self._pool.fetch(
+            """
+            SELECT DISTINCT t.sport_id
+            FROM tournaments t JOIN events e ON e.tournament_id = t.id
+            WHERE e.sport = $1 AND t.sport_id <> ''
+            """,
+            sport,
+        )
+
+        return [row["sport_id"] for row in rows]
 
     async def freshness(self) -> tuple[datetime | None, int]:
         """How fresh the whole index is -- its oldest row -- and how big."""

@@ -42,8 +42,9 @@ selections mean an accumulator. For anything else return no legs.
 - market: the bet type, as printed, such as "1X2 - Rendes játékidő" or
   "Money Line - Match".
 - selection: the outcome being backed, as printed.
-- odds: the decimal odds for that leg. The slips use both a comma and a point
-  as the decimal separator, so "1,82" and "1.82" are both 1.82.
+- odds: the decimal odds for that leg, or null if the slip does not price it.
+  The slips use both a comma and a point as the decimal separator, so "1,82"
+  and "1.82" are both 1.82.
 
 Keep the wording exactly as it appears, in its original language; it has to
 match the bookmaker's own page later."""
@@ -70,17 +71,21 @@ mean an accumulator.
 - event: the two teams or competitors, exactly as written in the message.
 - market: **the bookmaker's name for the bet type, not the tipster's phrasing.**
   The tipster writes prose; translate it to the market the bookmaker lists, in
-  Hungarian, including the event part. For example:
+  Hungarian, including the event part. These examples are football:
     "X nyer (rendes játékidő)"         -> "1X2 - Rendes játékidő"
     "Over 2.5 gól"                     -> "Gólszám 2.5 - Rendes játékidő"
     "X -2 ázsiai hendikep"             -> "Ázsiai hendikep -2 - Rendes játékidő"
+  **The part after the dash is not a constant.** Each sport names the period
+  its own way, and the bet-type list below is the only source for it — a
+  basketball handicap is listed as "- Hosszabbítással", so calling it
+  "- Rendes játékidő" names a market this bookmaker does not have.
   Keep the line the tipster quoted, with its sign, exactly as they wrote it.
   If you cannot map the bet confidently to a market a bookmaker would list,
   return no legs rather than inventing one.
 - selection: what is being backed, as the bookmaker would label it — a team
   name for a winner market, "Igen"/"Nem" for both-teams-to-score, "Több, mint
   N"/"Kevesebb, mint N" for totals, "Döntetlen" for a draw.
-- odds: the decimal odds, as a number.
+- odds: the decimal odds, as a number, or null when the tipster gives none.
 """
 
 
@@ -91,7 +96,8 @@ class _Leg(BaseModel):
     event: str
     market: str
     selection: str
-    odds: float
+    odds: float | None = None
+    """What the tipster quoted, and None when they quoted nothing."""
 
 
 class _Slip(BaseModel):
@@ -186,7 +192,7 @@ async def parse_tip(
             event=leg.event,
             market=leg.market,
             selection=leg.selection,
-            odds=leg.odds if leg.odds > 0 else None,
+            odds=leg.odds if leg.odds else None,
         )
         for leg in slip.legs
     )

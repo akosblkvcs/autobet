@@ -10,7 +10,13 @@ from typing import Any
 import structlog
 
 from autobet.connection import Connection, connected
-from autobet.matching import IndexedEvent, find_event, indexed_event, pick_offer
+from autobet.matching import (
+    IndexedEvent,
+    IndexedTournament,
+    find_event,
+    indexed_event,
+    pick_offer,
+)
 from autobet.models import LegResolution, SelectionStatus, Tip, TipLeg
 from autobet.storage import Store
 
@@ -26,6 +32,16 @@ def _upcoming(tournament: dict[str, Any]) -> int:
     return int(tournament.get("numberOfUpcomingMatches") or 0)
 
 
+def _sport_ids(records: list[dict[str, Any]]) -> list[str]:
+    """Every sport id to walk, including the games a parent sport holds."""
+    return [
+        str(one)
+        for record in records
+        if record["_type"] == "SPORT"
+        for one in (record["id"], *(record.get("childrenIds") or ()))
+    ]
+
+
 class Index:
     """The stored board: walked by the scheduled task, read by every tip."""
 
@@ -36,13 +52,9 @@ class Index:
     async def rebuild(self) -> int:
         """Walk every tournament of every sport and replace the stored index."""
         async with connected(await self._store.books.config()) as connection:
-            sports = [
-                record["id"]
-                for record in await connection.dump(_DISCIPLINES_TOPIC)
-                if record["_type"] == "SPORT"
-            ]
+            sports = _sport_ids(await connection.dump(_DISCIPLINES_TOPIC))
             events: list[IndexedEvent] = []
-            upcoming: dict[str, int] = {}
+            walked: list[IndexedTournament] = []
             for sport in sports:
                 tournaments = [
                     record
@@ -55,9 +67,11 @@ class Index:
                         indexed_event(records, tournament_id)
                         for records in await self._fixtures(connection, tournament_id)
                     ]
-                    upcoming[tournament_id] = _upcoming(tournament)
+                    walked.append(
+                        IndexedTournament(tournament_id, sport, _upcoming(tournament))
+                    )
 
-        await self._store.events.replace(events, upcoming)
+        await self._store.events.replace(events, walked)
 
         log.info("index_built", events=len(events), sports=len(sports))
 
@@ -110,11 +124,7 @@ class Index:
         self, connection: Connection, events: list[IndexedEvent], sport: str
     ) -> list[IndexedEvent] | None:
         """Re-read the tournaments of one sport that have grown since the walk."""
-        wanted = [
-            record["id"]
-            for record in await connection.dump(_DISCIPLINES_TOPIC)
-            if record["_type"] == "SPORT" and record["name"] == sport
-        ]
+        wanted = await self._ids_for(connection, sport)
 
         if not wanted:
             return None
@@ -122,7 +132,8 @@ class Index:
         held = await self._store.events.upcoming()
         grown = [
             record
-            for record in await connection.dump(f"tournaments/{wanted[0]}")
+            for one in wanted
+            for record in await connection.dump(f"tournaments/{one}")
             if record["_type"] == "TOURNAMENT"
             and _upcoming(record) != held.get(str(record["id"]), 0)
         ]
@@ -133,20 +144,42 @@ class Index:
             return None
 
         fresh: list[IndexedEvent] = []
-        upcoming: dict[str, int] = {}
+        rewalked: list[IndexedTournament] = []
         for tournament in grown:
             tournament_id = str(tournament["id"])
             fresh += [
                 indexed_event(records, tournament_id)
                 for records in await self._fixtures(connection, tournament_id)
             ]
-            upcoming[tournament_id] = _upcoming(tournament)
+            rewalked.append(
+                IndexedTournament(
+                    tournament_id,
+                    str(tournament.get("sportId") or ""),
+                    _upcoming(tournament),
+                )
+            )
 
-        await self._store.events.update(fresh, upcoming)
+        await self._store.events.update(fresh, rewalked)
+        replaced = {tournament.id for tournament in rewalked}
 
         log.info("sport_rewalked", sport=sport, tournaments=len(grown), events=len(fresh))
 
-        return [event for event in events if event.tournament_id not in upcoming] + fresh
+        return [event for event in events if event.tournament_id not in replaced] + fresh
+
+    async def _ids_for(self, connection: Connection, sport: str) -> list[str]:
+        """The feed ids a sport is listed under, as cheaply as they can be had."""
+        walked = await self._store.events.sports_of(sport)
+
+        if walked:
+            return walked
+
+        return _sport_ids(
+            [
+                record
+                for record in await connection.dump(_DISCIPLINES_TOPIC)
+                if record["_type"] == "SPORT" and record["name"] == sport
+            ]
+        )
 
     async def _matches(
         self, connection: Connection, tournament: str

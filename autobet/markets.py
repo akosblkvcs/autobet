@@ -1,12 +1,4 @@
-"""The bet types this bookmaker offers, in its own words.
-
-The parser has to name a market the way the site names it, and guessing that
-from memory is what put `Végeredmény (kétesély nélkül)` -- a market that does
-not exist -- on a basketball tip. So the vocabulary is harvested from the feed
-rather than written down: :func:`harvest` walks a few events per sport and
-keeps each market name with its line and its teams replaced, which collapses
-the ~90 names one match lists into ~25 bet types.
-"""
+"""The bet types this bookmaker offers, in its own words."""
 
 import json
 import re
@@ -22,15 +14,11 @@ from autobet.matching import IndexedEvent, two_sides
 log = structlog.get_logger(__name__)
 
 _LINE = re.compile(r"-?\d+[.,]?\d*")
-_PER_SPORT = 3
+_PER_SPORT = 8
 
 
 def family(name: str, sides: tuple[str, str] | None) -> str:
-    """One market name reduced to the bet it is, without its line or its teams.
-
-    `Montrose gólszám 3.5` and `FC Dundee 2 gólszám 4.5` are the same bet type,
-    so both become `{csapat} gólszám {N}`.
-    """
+    """One market name reduced to the bet it is, without its line or its teams."""
     for side in sorted(sides or (), key=len, reverse=True):
         name = name.replace(side, "{csapat}")
 
@@ -51,16 +39,9 @@ def families_of(records: list[dict[str, Any]], event: IndexedEvent) -> set[str]:
 async def harvest(
     connection: Connection, events: list[IndexedEvent]
 ) -> dict[str, list[str]]:
-    """Collect the bet types on offer, a few events per sport.
-
-    A market can name a single player rather than a team -- baseball lists
-    `A.J. Ewing RBI-ok száma {N}` -- and no template collapses those. They are
-    dropped by keeping only families that more than one sampled event lists,
-    since a player prop belongs to one match and a bet type belongs to all of
-    them. That took baseball from 551 families to a usable list.
-    """
+    """Collect the bet types on offer, from a sport's eight biggest fixtures."""
     sampled: dict[str, list[IndexedEvent]] = defaultdict(list)
-    for event in events:
+    for event in sorted(events, key=lambda one: -one.markets):
         if len(sampled[event.sport]) < _PER_SPORT:
             sampled[event.sport].append(event)
 

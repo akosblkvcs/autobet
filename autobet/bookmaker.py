@@ -102,16 +102,24 @@ class Bookmaker:
         return Placement(
             resolutions=shared.resolutions,
             results=tuple(
-                replace(
-                    shared,
-                    user_id=account.user_id,
-                    stake=own.stake,
-                    error=type(one).__name__,
-                )
+                self._blown(shared, account, own, one)
                 if isinstance(one, BaseException)
                 else one
                 for account, own, one in zip(accounts, terms, bets, strict=True)
             ),
+        )
+
+    def _blown(
+        self, shared: BetResult, account: Account, terms: Terms, error: BaseException
+    ) -> BetResult:
+        """One account's bet raised: the row says which, the log says why."""
+        log.error("bet_failed", user=account.user_id, exc_info=error)
+
+        return replace(
+            shared,
+            user_id=account.user_id,
+            stake=terms.stake,
+            error=type(error).__name__,
         )
 
     async def _bet(
@@ -270,6 +278,9 @@ class Bookmaker:
         if started:
             return Refusal(RefusalCode.EVENT_STARTED, started[0].event_name)
 
+        if tip.odds is None:
+            return Refusal(RefusalCode.UNPRICED, "the tipster quoted no price")
+
         _, drop = _priced(tip, placeable)
 
         if drop is not None and -drop > rise_percent:
@@ -284,11 +295,9 @@ class Bookmaker:
         self, tip: Tip, offers: list[LegOffer], terms: Terms
     ) -> Refusal | None:
         """The limits this person owns, theirs to loosen or tighten."""
-        live, drop = _priced(tip, offers)
+        _, drop = _priced(tip, offers)
 
-        if drop is None:
-            log.info("odds_drop_unchecked", live=round(live, 3))
-        elif drop > terms.max_odds_drop_percent:
+        if drop is not None and drop > terms.max_odds_drop_percent:
             return Refusal(
                 RefusalCode.ODDS_DROP,
                 f"{drop:.1f}%, limit {terms.max_odds_drop_percent:.0f}%",
