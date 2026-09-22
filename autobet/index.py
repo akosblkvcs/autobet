@@ -26,6 +26,16 @@ def _upcoming(tournament: dict[str, Any]) -> int:
     return int(tournament.get("numberOfUpcomingMatches") or 0)
 
 
+def _sport_ids(records: list[dict[str, Any]]) -> list[str]:
+    """Every sport id to walk, including the games a parent sport holds."""
+    return [
+        str(one)
+        for record in records
+        if record["_type"] == "SPORT"
+        for one in (record["id"], *(record.get("childrenIds") or ()))
+    ]
+
+
 class Index:
     """The stored board: walked by the scheduled task, read by every tip."""
 
@@ -36,11 +46,7 @@ class Index:
     async def rebuild(self) -> int:
         """Walk every tournament of every sport and replace the stored index."""
         async with connected(await self._store.books.config()) as connection:
-            sports = [
-                record["id"]
-                for record in await connection.dump(_DISCIPLINES_TOPIC)
-                if record["_type"] == "SPORT"
-            ]
+            sports = _sport_ids(await connection.dump(_DISCIPLINES_TOPIC))
             events: list[IndexedEvent] = []
             upcoming: dict[str, int] = {}
             for sport in sports:

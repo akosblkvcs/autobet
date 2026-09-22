@@ -23,6 +23,7 @@ _MIN_GAP = 0.05
 
 _FIXTURE_SIDES = re.compile(r" - | vs\.? ")
 _DECIMAL_LINE = re.compile(r"(\d+)[.,](\d+)")
+_SCORE = re.compile(r"(\d+)\s*:\s*(\d+)")
 _SELECTION_PARTS = re.compile(r"\s*(?:/|,|\bvagy\b|\bor\b)\s*")
 _SHORTHAND = re.compile(r"[1x2]+")
 _TEAM_SLOT = "{csapat}"
@@ -69,6 +70,7 @@ _SIDE_KEYS = {
 
 def _normalise(name: str) -> str:
     """Reduce a market name to what the slip and the feed agree on."""
+    name = _SCORE.sub(lambda m: f"{m.group(1)}-{m.group(2)}", name)
     name = name.replace("–", "-").replace("—", "-")
 
     return " ".join(

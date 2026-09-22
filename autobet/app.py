@@ -39,7 +39,7 @@ def _stopping() -> asyncio.Event:
 
 async def run_service(settings: Settings) -> None:
     """Run the Telegram client, the bet placer and the control plane."""
-    store = await Store.connect(settings.database_url)
+    store = await Store.connect(settings.database_url, settings.encryption_key)
     integrations = await store.config.integrations()
     missing = [
         name for name in Integrations.model_fields if not getattr(integrations, name)

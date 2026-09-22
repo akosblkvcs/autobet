@@ -69,7 +69,7 @@ def build_parser() -> argparse.ArgumentParser:
 
 async def cmd_login(settings: Settings) -> None:
     """Interactively authenticate and write the reusable session file."""
-    store = await Store.connect(settings.database_url)
+    store = await Store.connect(settings.database_url, settings.encryption_key)
     client = build_client(settings, await store.config.integrations())
 
     await store.close()
@@ -82,7 +82,7 @@ async def cmd_login(settings: Settings) -> None:
 
 async def cmd_chats(settings: Settings) -> None:
     """List every chat the session can see, with their ids and names."""
-    store = await Store.connect(settings.database_url)
+    store = await Store.connect(settings.database_url, settings.encryption_key)
     client = build_client(settings, await store.config.integrations())
 
     await store.close()
@@ -96,7 +96,7 @@ async def cmd_chats(settings: Settings) -> None:
 
 async def cmd_migrate(settings: Settings) -> None:
     """Apply pending migrations; `run` does this on startup too."""
-    store = await Store.connect(settings.database_url)
+    store = await Store.connect(settings.database_url, settings.encryption_key)
 
     await store.close()
 
@@ -105,7 +105,7 @@ async def cmd_config(
     settings: Settings, key: str | None, value: str | None, reveal: bool
 ) -> None:
     """Show the stored configuration, or set one value."""
-    store = await Store.connect(settings.database_url)
+    store = await Store.connect(settings.database_url, settings.encryption_key)
 
     if key is not None and value is not None:
         await store.config.put(key, value)
@@ -133,7 +133,7 @@ async def cmd_book(
     settings: Settings, key: str | None, value: str | None, enable: bool, disable: bool
 ) -> None:
     """Show the book's endpoints, set one, or let the book be used."""
-    store = await Store.connect(settings.database_url)
+    store = await Store.connect(settings.database_url, settings.encryption_key)
 
     if key is not None and value is not None:
         await store.books.put(key, value)
@@ -217,7 +217,7 @@ async def cmd_user(
     settings: Settings, whom: str | None, key: str | None, value: str | None
 ) -> None:
     """Show what each person stakes and on what terms, or change one of them."""
-    store = await Store.connect(settings.database_url)
+    store = await Store.connect(settings.database_url, settings.encryption_key)
 
     if whom is not None and key is not None and value is not None:
         user = await _person(store, whom)
@@ -266,7 +266,7 @@ async def cmd_channel(
     settings: Settings, action: str | None, chat_id: int | None
 ) -> None:
     """List the watched chats, or enable and disable one."""
-    store = await Store.connect(settings.database_url)
+    store = await Store.connect(settings.database_url, settings.encryption_key)
 
     if action is not None and chat_id is not None:
         if action == "enable":
@@ -287,7 +287,7 @@ async def cmd_channel(
 
 async def cmd_index(settings: Settings) -> None:
     """Walk the bookmaker's board and store the event index."""
-    store = await Store.connect(settings.database_url)
+    store = await Store.connect(settings.database_url, settings.encryption_key)
 
     print(f"{await Index(store).rebuild()} events indexed")
 
@@ -296,7 +296,7 @@ async def cmd_index(settings: Settings) -> None:
 
 async def cmd_markets(settings: Settings) -> None:
     """Harvest the bookmaker's bet types so the parser can name them."""
-    store = await Store.connect(settings.database_url)
+    store = await Store.connect(settings.database_url, settings.encryption_key)
     events = await store.events.all()
     before = markets.load(settings.market_families)
 
