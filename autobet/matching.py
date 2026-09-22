@@ -14,7 +14,7 @@ from typing import Any
 import structlog
 from rapidfuzz import fuzz
 
-from autobet.models import LegOffer, LegResolution, SelectionStatus, TipLeg
+from autobet.models import LegOffer, LegResolution, SelectionStatus, TipLeg, utcnow
 
 log = structlog.get_logger(__name__)
 
@@ -176,6 +176,11 @@ class IndexedEvent:
     starts_at: datetime | None
     markets: int = 0
     """How many markets the fixture declares, which is what `harvest` samples by."""
+
+    @property
+    def started(self) -> bool:
+        """Whether kick-off has passed, which is when this stops being bettable."""
+        return self.starts_at is not None and self.starts_at < utcnow()
 
     def side_of(self, competitor: str) -> str | None:
         """Which side a name picks out, or None when it fits both or neither."""

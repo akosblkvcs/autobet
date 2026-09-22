@@ -13,6 +13,7 @@ from autobet.models import (
     RefusalCode,
     Tip,
     Verdict,
+    display,
 )
 from autobet.storage.rows import to_leg, to_message, to_resolution
 
@@ -20,7 +21,7 @@ from autobet.storage.rows import to_leg, to_message, to_resolution
 def _to_verdict(row: Record) -> Verdict:
     """One account's bet row as the tip list reads it."""
     return Verdict(
-        who=row["who"],
+        who=display(row["name"], row["email"], row["subject"]),
         refusal=(
             None
             if row["refusal_code"] is None
@@ -243,7 +244,8 @@ class Bets:
             """
             SELECT b.tip_id, b.state, b.refusal_code, b.refusal_detail, b.stake,
                    coalesce(b.reference, '') AS reference,
-                   coalesce(nullif(u.name, ''), u.email, '') AS who
+                   coalesce(u.name, '') AS name, coalesce(u.email, '') AS email,
+                   coalesce(u.subject, '') AS subject
             FROM bets b
             LEFT JOIN users u ON u.id = b.user_id
             WHERE b.tip_id = ANY($1::bigint[])

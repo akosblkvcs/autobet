@@ -81,6 +81,11 @@ class Role(StrEnum):
     USER = "user"
 
 
+def display(name: str, email: str, subject: str) -> str:
+    """What a page calls somebody: their name, else whatever identifies them."""
+    return name or email or subject
+
+
 @dataclass(frozen=True, slots=True)
 class User:
     """Someone the identity provider vouched for, as this app knows them."""
@@ -98,8 +103,8 @@ class User:
 
     @property
     def display(self) -> str:
-        """What a page calls this person: their name, else what identifies them."""
-        return self.name or self.email or self.subject
+        """What a page calls this person, by the one rule that decides it."""
+        return display(self.name, self.email, self.subject)
 
 
 @dataclass(frozen=True, slots=True)
