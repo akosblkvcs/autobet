@@ -48,8 +48,10 @@
       <input type="hidden" name="csrf" value="{{ session.csrf }}">
       <input type="hidden" name="chat_id" value="{{ chat_id }}">
       <input type="hidden" name="enabled" value="{{ "false" if enabled else "true" }}">
-      <span class="name">{{ title }}</span>
-      <span class="quiet">{{ chat_id }}</span>
+      <span class="who">
+        <span class="name">{{ title }}</span>
+        <span class="quiet">{{ chat_id }}</span>
+      </span>
       <button type="submit">{{ "Disable" if enabled else "Enable" }}</button>
     </form>
   </li>
@@ -64,8 +66,13 @@
       <input type="hidden" name="csrf" value="{{ session.csrf }}">
       <input type="hidden" name="user_id" value="{{ person.user.id }}">
       <input type="hidden" name="active" value="{{ "false" if person.status == "active" else "true" }}">
-      <span class="name">{{ person.user.display }}</span>
-      <span class="quiet">{{ person.user.email }} &middot; {{ person.user.role }} &middot; {{ person.status }}</span>
+      <span class="who">
+        <span class="name">{{ person.user.display }}</span>
+        <span class="quiet">
+          {%- if person.user.email and person.user.email != person.user.display -%}
+          {{ person.user.email }} &middot;
+          {%- endif %} {{ person.user.role }} &middot; {{ person.status }}</span>
+      </span>
       {% if person.user.id != session.user.id %}
       <button type="submit">{{ "Disable" if person.status == "active" else "Enable" }}</button>
       {% endif %}

@@ -230,6 +230,37 @@ button {
   align-items: center;
 }
 
+.rows.plain form.inline {
+  flex-wrap: nowrap;
+}
+
+.rows.plain form.inline .who {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0 1.1rem;
+  flex: 1 1 auto;
+  min-width: 0;
+  align-items: baseline;
+}
+
+.rows.plain form.inline .name,
+.rows.plain form.inline .quiet {
+  min-width: 0;
+}
+
+.rows.plain form.inline .who .name {
+  flex: 0 1 auto;
+}
+
+.rows.plain form.inline .quiet {
+  white-space: nowrap;
+}
+
+.rows.plain form.inline button {
+  flex: 0 0 auto;
+  margin-left: auto;
+}
+
 .inline .name {
   flex: 1 1 12rem;
   color: var(--fg);
