@@ -28,6 +28,7 @@ def _to_verdict(row: Record) -> Verdict:
         ),
         error=row["refusal_detail"] if row["state"] == BetState.ERROR else "",
         reference=row["reference"],
+        state=BetState(row["state"]),
     )
 
 

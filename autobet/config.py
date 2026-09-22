@@ -62,8 +62,6 @@ class Settings(BaseSettings):
     oidc_redirect_url: str = ""
     admin_emails: Emails = ()
 
-    dry_run: bool = True
-
     @property
     def telegram_session(self) -> Path:
         """Telethon's SQLite session."""

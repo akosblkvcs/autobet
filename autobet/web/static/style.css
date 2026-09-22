@@ -148,8 +148,13 @@ h2:first-child {
 }
 
 .verdict.refused,
-.verdict.failed {
+.verdict.error {
   color: var(--drop);
+}
+
+.verdict.paper,
+.verdict.placed {
+  color: var(--muted);
 }
 
 .quiet {
