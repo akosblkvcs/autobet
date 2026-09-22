@@ -8,11 +8,28 @@ from autobet.models import (
     BetState,
     LegResolution,
     MessageWithTip,
+    Placement,
     Refusal,
     RefusalCode,
     Tip,
+    Verdict,
 )
 from autobet.storage.rows import to_leg, to_message, to_resolution
+
+
+def _to_verdict(row: Record) -> Verdict:
+    """One account's bet row as the tip list reads it."""
+    return Verdict(
+        who=row["who"],
+        refusal=(
+            None
+            if row["refusal_code"] is None
+            else Refusal(RefusalCode(row["refusal_code"]), row["refusal_detail"])
+        ),
+        error=row["refusal_detail"] if row["state"] == BetState.ERROR else "",
+        reference=row["reference"],
+    )
+
 
 _INSERT_SELECTION = """
     INSERT INTO selections (
@@ -37,9 +54,9 @@ class Bets:
         """Share the store's pool."""
         self._pool = pool
 
-    async def record(self, tip: Tip, result: BetResult) -> None:
-        """Write the tip, its legs, what they resolved to and the bet, at once."""
-        resolutions = result.resolutions or (None,) * len(tip.legs)
+    async def record(self, tip: Tip, placement: Placement) -> None:
+        """Write the tip, its legs, what they resolved to and every bet, at once."""
+        resolutions = placement.resolutions or (None,) * len(tip.legs)
 
         async with self._pool.acquire() as conn, conn.transaction():
             tip_id: int = await conn.fetchval(
@@ -53,7 +70,7 @@ class Bets:
                 tip.message.external_id,
                 tip.odds,
             )
-            bet_id = await self._write_bet(conn, tip_id, tip, result)
+            legs: list[tuple[int, int | None]] = []
 
             for position, (leg, resolution) in enumerate(
                 zip(tip.legs, resolutions, strict=True)
@@ -78,20 +95,37 @@ class Bets:
                     leg.selection,
                     leg.odds,
                 )
-                selection_id = await self._write_selection(conn, leg_id, resolution)
-
-                await conn.execute(
-                    """
-                    INSERT INTO bet_legs (bet_id, tip_leg_id, selection_id, odds)
-                    VALUES ($1, $2, $3, $4)
-                    ON CONFLICT (bet_id, tip_leg_id) DO UPDATE SET
-                        selection_id = EXCLUDED.selection_id, odds = EXCLUDED.odds
-                    """,
-                    bet_id,
-                    leg_id,
-                    selection_id,
-                    resolution.offer.odds if resolution and resolution.offer else None,
+                legs.append(
+                    (leg_id, await self._write_selection(conn, leg_id, resolution))
                 )
+
+            for result in placement.results:
+                bet_id = await self._write_bet(conn, tip_id, tip, result)
+                priced = result.resolutions or (None,) * len(tip.legs)
+
+                await self._write_bet_legs(conn, bet_id, legs, priced)
+
+    async def _write_bet_legs(
+        self,
+        conn: PoolConnectionProxy[Record],
+        bet_id: int,
+        legs: list[tuple[int, int | None]],
+        priced: tuple[LegResolution | None, ...],
+    ) -> None:
+        """One account's per-leg snapshot, priced as that account saw it."""
+        for (leg_id, selection_id), resolution in zip(legs, priced, strict=True):
+            await conn.execute(
+                """
+                INSERT INTO bet_legs (bet_id, tip_leg_id, selection_id, odds)
+                VALUES ($1, $2, $3, $4)
+                ON CONFLICT (bet_id, tip_leg_id) DO UPDATE SET
+                    selection_id = EXCLUDED.selection_id, odds = EXCLUDED.odds
+                """,
+                bet_id,
+                leg_id,
+                selection_id,
+                resolution.offer.odds if resolution and resolution.offer else None,
+            )
 
     async def _write_bet(
         self,
@@ -101,14 +135,16 @@ class Bets:
         result: BetResult,
     ) -> int:
         """Write the verdict on the tip and return its bet id."""
+        owned = "(tip_id, user_id)" if result.user_id is not None else "(tip_id)"
+        unowned = "" if result.user_id is not None else " WHERE user_id IS NULL"
         bet_id: int = await conn.fetchval(
-            """
+            f"""
             INSERT INTO bets (
-                tip_id, state, refusal_code, refusal_detail,
+                tip_id, user_id, state, refusal_code, refusal_detail,
                 stake, odds, reference, placed_at, settlement
             )
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
-            ON CONFLICT (tip_id) WHERE user_id IS NULL DO UPDATE SET
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+            ON CONFLICT {owned}{unowned} DO UPDATE SET
                 state = EXCLUDED.state,
                 refusal_code = EXCLUDED.refusal_code,
                 refusal_detail = EXCLUDED.refusal_detail,
@@ -120,6 +156,7 @@ class Bets:
             RETURNING id
             """,
             tip_id,
+            result.user_id,
             result.state,
             None if result.refusal is None else result.refusal.code,
             result.refusal.detail if result.refusal else result.error,
@@ -166,15 +203,11 @@ class Bets:
         rows = await self._pool.fetch(
             """
             SELECT m.external_id, c.title AS channel, m.sent_at, m.received_at,
-                   m.text, m.media_path,
-                   t.id AS tip_id,
-                   b.state, b.refusal_code, b.refusal_detail,
-                   coalesce(b.reference, '') AS reference
+                   m.text, m.media_path, t.id AS tip_id
             FROM tips t
             JOIN messages m ON m.id = t.message_id
             JOIN channels c ON c.id = m.channel_id
-            LEFT JOIN bets b ON b.tip_id = t.id
-            WHERE b.id IS NOT NULL
+            WHERE EXISTS (SELECT 1 FROM bets b WHERE b.tip_id = t.id)
             ORDER BY m.received_at DESC
             LIMIT $1
             """,
@@ -198,6 +231,22 @@ class Bets:
         for leg_row in leg_rows:
             by_tip.setdefault(leg_row["tip_id"], []).append(leg_row)
 
+        bet_rows = await self._pool.fetch(
+            """
+            SELECT b.tip_id, b.state, b.refusal_code, b.refusal_detail,
+                   coalesce(b.reference, '') AS reference,
+                   coalesce(u.email, '') AS who
+            FROM bets b
+            LEFT JOIN users u ON u.id = b.user_id
+            WHERE b.tip_id = ANY($1::bigint[])
+            ORDER BY b.tip_id, b.id
+            """,
+            [row["tip_id"] for row in rows],
+        )
+        verdicts: dict[int, list[Verdict]] = {}
+        for bet_row in bet_rows:
+            verdicts.setdefault(bet_row["tip_id"], []).append(_to_verdict(bet_row))
+
         found: list[MessageWithTip] = []
         for row in rows:
             legs = tuple(to_leg(one) for one in by_tip.get(row["tip_id"], []))
@@ -210,18 +259,7 @@ class Bets:
                     message=to_message(row),
                     legs=legs,
                     resolutions=resolutions,
-                    state=None if row["state"] is None else BetState(row["state"]),
-                    refusal=(
-                        None
-                        if row["refusal_code"] is None
-                        else Refusal(
-                            RefusalCode(row["refusal_code"]), row["refusal_detail"]
-                        )
-                    ),
-                    error=(
-                        row["refusal_detail"] if row["state"] == BetState.ERROR else ""
-                    ),
-                    reference=row["reference"],
+                    verdicts=tuple(verdicts.get(row["tip_id"], [])),
                 )
             )
 
