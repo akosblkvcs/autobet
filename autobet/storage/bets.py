@@ -8,6 +8,7 @@ from autobet.models import (
     BetState,
     LegResolution,
     MessageWithTip,
+    Placement,
     Refusal,
     RefusalCode,
     Tip,
@@ -53,9 +54,9 @@ class Bets:
         """Share the store's pool."""
         self._pool = pool
 
-    async def record(self, tip: Tip, result: BetResult) -> None:
-        """Write the tip, its legs, what they resolved to and the bet, at once."""
-        resolutions = result.resolutions or (None,) * len(tip.legs)
+    async def record(self, tip: Tip, placement: Placement) -> None:
+        """Write the tip, its legs, what they resolved to and every bet, at once."""
+        resolutions = placement.resolutions or (None,) * len(tip.legs)
 
         async with self._pool.acquire() as conn, conn.transaction():
             tip_id: int = await conn.fetchval(
@@ -69,7 +70,7 @@ class Bets:
                 tip.message.external_id,
                 tip.odds,
             )
-            bet_id = await self._write_bet(conn, tip_id, tip, result)
+            legs: list[tuple[int, int | None]] = []
 
             for position, (leg, resolution) in enumerate(
                 zip(tip.legs, resolutions, strict=True)
@@ -94,20 +95,37 @@ class Bets:
                     leg.selection,
                     leg.odds,
                 )
-                selection_id = await self._write_selection(conn, leg_id, resolution)
-
-                await conn.execute(
-                    """
-                    INSERT INTO bet_legs (bet_id, tip_leg_id, selection_id, odds)
-                    VALUES ($1, $2, $3, $4)
-                    ON CONFLICT (bet_id, tip_leg_id) DO UPDATE SET
-                        selection_id = EXCLUDED.selection_id, odds = EXCLUDED.odds
-                    """,
-                    bet_id,
-                    leg_id,
-                    selection_id,
-                    resolution.offer.odds if resolution and resolution.offer else None,
+                legs.append(
+                    (leg_id, await self._write_selection(conn, leg_id, resolution))
                 )
+
+            for result in placement.results:
+                bet_id = await self._write_bet(conn, tip_id, tip, result)
+                priced = result.resolutions or (None,) * len(tip.legs)
+
+                await self._write_bet_legs(conn, bet_id, legs, priced)
+
+    async def _write_bet_legs(
+        self,
+        conn: PoolConnectionProxy[Record],
+        bet_id: int,
+        legs: list[tuple[int, int | None]],
+        priced: tuple[LegResolution | None, ...],
+    ) -> None:
+        """One account's per-leg snapshot, priced as that account saw it."""
+        for (leg_id, selection_id), resolution in zip(legs, priced, strict=True):
+            await conn.execute(
+                """
+                INSERT INTO bet_legs (bet_id, tip_leg_id, selection_id, odds)
+                VALUES ($1, $2, $3, $4)
+                ON CONFLICT (bet_id, tip_leg_id) DO UPDATE SET
+                    selection_id = EXCLUDED.selection_id, odds = EXCLUDED.odds
+                """,
+                bet_id,
+                leg_id,
+                selection_id,
+                resolution.offer.odds if resolution and resolution.offer else None,
+            )
 
     async def _write_bet(
         self,

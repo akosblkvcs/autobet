@@ -23,6 +23,7 @@ class RefusalCode(StrEnum):
     PAPER_MODE = "paper_mode"
     DRY_RUN = "dry_run"
     BOOK_REJECTED = "book_rejected"
+    HORIZON = "horizon"
 
 
 class BetState(StrEnum):
@@ -259,3 +260,14 @@ class BetResult:
     def total_latency_ms(self) -> int:
         """Milliseconds from the tip being sent to the bet being placed."""
         return int((self.placed_at - self.tip.message.sent_at).total_seconds() * 1000)
+
+
+@dataclass(frozen=True, slots=True)
+class Placement:
+    """One tip resolved once, and what each account's bet on it came to."""
+
+    resolutions: tuple[LegResolution, ...]
+    """What the legs resolved to at the book, shared by every account."""
+
+    results: tuple[BetResult, ...]
+    """One per account, or one unowned result when nobody holds credentials."""

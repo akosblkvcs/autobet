@@ -15,6 +15,7 @@ from autobet.models import (
     BetResult,
     LegOffer,
     LegResolution,
+    Placement,
     Refusal,
     RefusalCode,
     SelectionStatus,
@@ -47,7 +48,7 @@ class Bookmaker:
         self._store = store
         self._index = Index(store)
 
-    async def place(self, tip: Tip, policy: Policy) -> list[BetResult]:
+    async def place(self, tip: Tip, policy: Policy) -> Placement:
         """Resolve the tip once, then stake it through every eligible account."""
         book = await self._store.books.config()
 
@@ -67,18 +68,19 @@ class Bookmaker:
         )
         accounts = await self._store.accounts.active(TIPPMIXPRO)
 
+        results: list[BetResult] = []
+
         if not accounts:
             log.info("no_account", legs=len(tip.legs))
 
-            return [
+            results = [
                 replace(
                     shared,
                     refusal=shared.refusal
                     or Refusal(RefusalCode.NO_ACCOUNT, "nobody holds credentials"),
                 )
             ]
-
-        if shared.refusal is not None:
+        elif shared.refusal is not None:
             log.info(
                 "bet_refused",
                 refusal=shared.refusal.code,
@@ -87,9 +89,8 @@ class Bookmaker:
                 tipster_odds=None if tip.odds is None else round(tip.odds, 3),
             )
 
-            return [replace(shared, user_id=account.user_id) for account in accounts]
-
-        if self._dry_run:
+            results = [replace(shared, user_id=account.user_id) for account in accounts]
+        elif self._dry_run:
             log.info(
                 "tip_observed",
                 legs=len(tip.legs),
@@ -97,22 +98,26 @@ class Bookmaker:
                 accounts=len(accounts),
             )
 
-            return [
+            results = [
                 replace(shared, user_id=account.user_id, reference="dry-run")
                 for account in accounts
             ]
+        else:
+            staked = await asyncio.gather(
+                *(
+                    self._staked(book, tip, policy, shared, account)
+                    for account in accounts
+                ),
+                return_exceptions=True,
+            )
+            results = [
+                replace(shared, user_id=account.user_id, error=type(one).__name__)
+                if isinstance(one, BaseException)
+                else one
+                for account, one in zip(accounts, staked, strict=True)
+            ]
 
-        staked = await asyncio.gather(
-            *(self._staked(book, tip, policy, shared, account) for account in accounts),
-            return_exceptions=True,
-        )
-
-        return [
-            replace(shared, user_id=account.user_id, error=type(one).__name__)
-            if isinstance(one, BaseException)
-            else one
-            for account, one in zip(accounts, staked, strict=True)
-        ]
+        return Placement(resolutions=shared.resolutions, results=tuple(results))
 
     def _report(self, tip: Tip, offers: list[LegOffer | None]) -> None:
         """Say what each leg resolved to, once, however many accounts follow."""

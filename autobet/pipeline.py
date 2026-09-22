@@ -8,7 +8,7 @@ from decimal import Decimal
 import structlog
 
 from autobet.bookmaker import Bookmaker
-from autobet.models import BetResult, IncomingMessage, Tip, utcnow
+from autobet.models import BetResult, IncomingMessage, Placement, Tip, utcnow
 from autobet.storage import Store
 
 log = structlog.get_logger(__name__)
@@ -88,10 +88,12 @@ async def run_pipeline(
 
             state.tips += 1
 
-            for result in await bookmaker.place(tip, policy):
-                await store.bets.record(tip, result)
-                recorded = True
+            placement = await bookmaker.place(tip, policy)
 
+            await store.bets.record(tip, placement)
+            recorded = True
+
+            for result in placement.results:
                 log.info(
                     "bet_placed" if result.accepted else "bet_rejected",
                     user=result.user_id,
@@ -108,10 +110,15 @@ async def run_pipeline(
             if tip is not None and not recorded:
                 await store.bets.record(
                     tip,
-                    BetResult(
-                        tip=tip,
-                        reference="",
-                        placed_at=utcnow(),
-                        error=type(error).__name__,
+                    Placement(
+                        resolutions=(),
+                        results=(
+                            BetResult(
+                                tip=tip,
+                                reference="",
+                                placed_at=utcnow(),
+                                error=type(error).__name__,
+                            ),
+                        ),
                     ),
                 )
