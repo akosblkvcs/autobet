@@ -191,7 +191,12 @@ async def cmd_account(settings: Settings, action: str | None, whom: str | None) 
         else:
             await store.accounts.forget(user.id, TIPPMIXPRO)
 
-    for account in await store.accounts.all(TIPPMIXPRO):
+    accounts = await store.accounts.all(TIPPMIXPRO)
+
+    if not accounts:
+        print("no accounts; add one with `account add <email>`")
+
+    for account in accounts:
         owner = await store.users.by_id(account.user_id)
         print(
             f"{account.user_id:>4}  {(owner.email if owner else '?'):<28} "
@@ -213,7 +218,12 @@ async def cmd_channel(
         else:
             await store.archive.unwatch(chat_id)
 
-    for watched_id, title, enabled in await store.archive.channels():
+    channels = await store.archive.channels()
+
+    if not channels:
+        print("no channels; add one with `channel enable <chat_id>`")
+
+    for watched_id, title, enabled in channels:
         print(f"{watched_id:>16}  {'on ' if enabled else 'off'}  {title}")
 
     await store.close()
