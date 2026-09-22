@@ -61,7 +61,7 @@ class Bookmaker:
             reference="",
             placed_at=utcnow(),
             resolutions=tuple(resolutions),
-            refusal=self._mismatched(tip, offers, policy.mismatch_rise_percent),
+            refusal=self._mismatched(tip, offers),
         )
         accounts = await self._store.accounts.active(TIPPMIXPRO)
 
@@ -249,16 +249,14 @@ class Bookmaker:
         self, tip: Tip, offers: list[LegOffer | None], terms: Terms
     ) -> Refusal | None:
         """Say why this person must not stake this tip, or None when they may."""
-        mismatched = self._mismatched(tip, offers, terms.mismatch_rise_percent)
+        mismatched = self._mismatched(tip, offers)
 
         if mismatched is not None:
             return mismatched
 
         return self._beyond_limits(tip, [o for o in offers if o is not None], terms)
 
-    def _mismatched(
-        self, tip: Tip, offers: list[LegOffer | None], rise_percent: int
-    ) -> Refusal | None:
+    def _mismatched(self, tip: Tip, offers: list[LegOffer | None]) -> Refusal | None:
         """Signs this is not the bet the tipster sent: correctness, not policy."""
         placeable = [offer for offer in offers if offer is not None]
 
@@ -275,26 +273,27 @@ class Bookmaker:
         if tip.odds is None:
             return Refusal(RefusalCode.UNPRICED, "the tipster quoted no price")
 
-        _, drop = _priced(tip, placeable)
-
-        if drop is not None and -drop > rise_percent:
-            return Refusal(
-                RefusalCode.ODDS_RISE,
-                f"{-drop:.1f}% above the tipster, limit {rise_percent}%",
-            )
-
         return None
 
     def _beyond_limits(
         self, tip: Tip, offers: list[LegOffer], terms: Terms
     ) -> Refusal | None:
-        """The limits this person owns, theirs to loosen or tighten."""
-        _, drop = _priced(tip, offers)
+        """The band this person's price must fall in, theirs to widen or narrow."""
+        live, drop = _priced(tip, offers)
+        assert tip.odds is not None  # `_mismatched` refuses an unpriced tip first
+        assert drop is not None
+        prices = f"{live:.3f} against {tip.odds:.3f}"
 
-        if drop is not None and drop > terms.max_odds_drop_percent:
+        if drop > terms.max_odds_drop_percent:
             return Refusal(
                 RefusalCode.ODDS_DROP,
-                f"{drop:.1f}%, limit {terms.max_odds_drop_percent:.0f}%",
+                f"{prices}, {drop:.1f}% below, limit {terms.max_odds_drop_percent:g}%",
+            )
+
+        if -drop > terms.max_odds_rise_percent:
+            return Refusal(
+                RefusalCode.ODDS_RISE,
+                f"{prices}, {-drop:.1f}% above, limit {terms.max_odds_rise_percent:g}%",
             )
 
         return None

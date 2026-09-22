@@ -26,6 +26,7 @@ def _to_policy(row: Record) -> UserPolicy:
         paused=row["paused"],
         stake=row["stake"],
         max_odds_drop_percent=row["max_odds_drop_percent"],
+        max_odds_rise_percent=row["max_odds_rise_percent"],
     )
 
 
@@ -128,7 +129,8 @@ class Users:
         """Each of these people's terms, defaulted for anyone with no row."""
         rows = await self._pool.fetch(
             """
-            SELECT user_id, mode, paused, stake, max_odds_drop_percent
+            SELECT user_id, mode, paused, stake, max_odds_drop_percent,
+                   max_odds_rise_percent
             FROM user_settings WHERE user_id = ANY($1::bigint[])
             """,
             list(user_ids),
@@ -159,7 +161,10 @@ class Users:
     async def stored_policy(self, user_id: int) -> set[str]:
         """Which of somebody's terms are their own rather than the service's."""
         row = await self._pool.fetchrow(
-            "SELECT stake, max_odds_drop_percent FROM user_settings WHERE user_id = $1",
+            """
+            SELECT stake, max_odds_drop_percent, max_odds_rise_percent
+            FROM user_settings WHERE user_id = $1
+            """,
             user_id,
         )
 
@@ -167,7 +172,9 @@ class Users:
             return set()
 
         return {"mode", "paused"} | {
-            name for name in ("stake", "max_odds_drop_percent") if row[name] is not None
+            name
+            for name in ("stake", "max_odds_drop_percent", "max_odds_rise_percent")
+            if row[name] is not None
         }
 
     async def set_status(self, user_id: int, active: bool) -> None:

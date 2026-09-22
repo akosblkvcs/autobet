@@ -24,14 +24,14 @@ class Policy(BaseModel):
         description="Flat amount staked on every tip, until a user sets their own.",
     )
     max_odds_drop_percent: float = Field(
-        default=10.0,
+        default=15.0,
         gt=0,
-        description="Abandon the bet when the live price fell this far below the tip.",
+        description="Refuse when the live price is this far below the tipster's.",
     )
-    mismatch_rise_percent: int = Field(
-        default=50,
+    max_odds_rise_percent: float = Field(
+        default=15.0,
         gt=0,
-        description="A price this far above the tip is a different bet, not a bargain.",
+        description="Refuse when the live price is this far above the tipster's.",
     )
 
 
@@ -50,7 +50,7 @@ class Terms:
     paused: bool
     stake: Decimal
     max_odds_drop_percent: float
-    mismatch_rise_percent: int
+    max_odds_rise_percent: float
 
 
 class UserPolicy(BaseModel):
@@ -76,7 +76,12 @@ class UserPolicy(BaseModel):
     max_odds_drop_percent: float | None = Field(
         default=None,
         gt=0,
-        description="This person's drop limit; blank follows the service.",
+        description="How far below the tipster's price you still bet.",
+    )
+    max_odds_rise_percent: float | None = Field(
+        default=None,
+        gt=0,
+        description="How far above the tipster's price you still bet.",
     )
 
     def over(self, policy: Policy) -> Terms:
@@ -90,7 +95,11 @@ class UserPolicy(BaseModel):
                 if self.max_odds_drop_percent is None
                 else self.max_odds_drop_percent
             ),
-            mismatch_rise_percent=policy.mismatch_rise_percent,
+            max_odds_rise_percent=(
+                policy.max_odds_rise_percent
+                if self.max_odds_rise_percent is None
+                else self.max_odds_rise_percent
+            ),
         )
 
 
