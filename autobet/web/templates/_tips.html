@@ -38,16 +38,15 @@
     <div class="quiet">accumulator, combined {{ "%.2f" % row.odds }}</div>
     {% endif %}
 
-    {% if row.refusal %}
-    <div class="verdict refused">
-      refused &middot; {{ row.refusal.code.replace("_", " ") }}
-      {%- if row.refusal.detail %} &middot; {{ row.refusal.detail }}{% endif %}
+    {% for verdict in row.verdicts %}
+    <div class="verdict {{ "refused" if verdict.refusal else "failed" if verdict.error else "quiet" }}">
+      {%- if verdict.who and row.verdicts | length > 1 %}{{ verdict.who }} &middot; {% endif %}
+      {%- if verdict.refusal %}refused &middot; {{ verdict.refusal.code.replace("_", " ") }}
+        {%- if verdict.refusal.detail %} &middot; {{ verdict.refusal.detail }}{% endif %}
+      {%- elif verdict.error %}failed &middot; {{ verdict.error }}
+      {%- else %}placed &middot; {{ verdict.reference }}{% endif %}
     </div>
-    {% elif row.error %}
-    <div class="verdict failed">failed &middot; {{ row.error }}</div>
-    {% elif row.reference %}
-    <div class="verdict quiet">placed &middot; {{ row.reference }}</div>
-    {% endif %}
+    {% endfor %}
   </li>
   {% endfor %}
 </ul>

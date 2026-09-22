@@ -15,6 +15,7 @@ class RefusalCode(StrEnum):
     EVENT_STARTED = "event_started"
     ODDS_DROP = "odds_drop"
     ODDS_RISE = "odds_rise"
+    NO_ACCOUNT = "no_account"
     INSUFFICIENT_BALANCE = "insufficient_balance"
     USER_PAUSED = "user_paused"
     DAILY_LOSS_LIMIT = "daily_loss_limit"
@@ -193,27 +194,29 @@ class Tip:
 
 
 @dataclass(frozen=True, slots=True)
+class Verdict:
+    """What one account's bet on a tip came to, for reading only."""
+
+    who: str = ""
+    refusal: Refusal | None = None
+    error: str = ""
+    reference: str = ""
+
+
+@dataclass(frozen=True, slots=True)
 class MessageWithTip:
-    """A message, its tip and what the bookmaker did, joined for reading only."""
+    """A message, its tip and what each account did about it, for reading only."""
 
     message: IncomingMessage
     legs: tuple[TipLeg, ...]
     resolutions: tuple[LegResolution | None, ...] = ()
-    state: BetState | None = None
-    refusal: Refusal | None = None
-    error: str = ""
-    reference: str = ""
+    verdicts: tuple[Verdict, ...] = ()
 
     def paired(self) -> list[tuple[TipLeg, LegResolution | None]]:
         """Legs next to how each one resolved; None where nothing looked it up."""
         resolutions = self.resolutions or (None,) * len(self.legs)
 
         return list(zip(self.legs, resolutions, strict=True))
-
-    @property
-    def failed(self) -> bool:
-        """Whether the tip blew up before it was judged, so no leg was looked up."""
-        return self.state is BetState.ERROR
 
     @property
     def odds(self) -> float | None:
@@ -231,6 +234,8 @@ class BetResult:
     resolutions: tuple[LegResolution, ...] = ()
     refusal: Refusal | None = None
     error: str = ""
+    user_id: int | None = None
+    """Whose bet this is. None while nobody holds credentials for the book."""
 
     @property
     def offers(self) -> tuple[LegOffer | None, ...]:

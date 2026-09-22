@@ -87,20 +87,21 @@ async def run_pipeline(
                 continue
 
             state.tips += 1
-            result = await bookmaker.place(tip, policy)
 
-            await store.bets.record(tip, result)
-            recorded = True
+            for result in await bookmaker.place(tip, policy):
+                await store.bets.record(tip, result)
+                recorded = True
 
-            log.info(
-                "bet_placed" if result.accepted else "bet_rejected",
-                legs=len(tip.legs),
-                odds=None if tip.odds is None else round(tip.odds, 3),
-                stake=tip.stake,
-                reference=result.reference,
-                refusal=None if result.refusal is None else result.refusal.code,
-                latency_ms=result.total_latency_ms,
-            )
+                log.info(
+                    "bet_placed" if result.accepted else "bet_rejected",
+                    user=result.user_id,
+                    legs=len(tip.legs),
+                    odds=None if tip.odds is None else round(tip.odds, 3),
+                    stake=tip.stake,
+                    reference=result.reference,
+                    refusal=None if result.refusal is None else result.refusal.code,
+                    latency_ms=result.total_latency_ms,
+                )
         except Exception as error:
             log.exception("tip_failed", external_id=message.external_id)
 
