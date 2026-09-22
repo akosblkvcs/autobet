@@ -8,7 +8,6 @@ from dataclasses import replace
 import structlog
 
 from autobet.books import TIPPMIXPRO, Tippmixpro
-from autobet.config import Settings
 from autobet.connection import Connection, connected
 from autobet.index import Index
 from autobet.models import (
@@ -41,10 +40,8 @@ def _priced(tip: Tip, offers: Sequence[LegOffer]) -> tuple[float, float | None]:
 class Bookmaker:
     """The bookmaker representation."""
 
-    def __init__(self, settings: Settings, store: Store) -> None:
-        """Store the settings and build the index the tips are resolved against."""
-        self._settings = settings
-        self._dry_run = settings.dry_run
+    def __init__(self, store: Store) -> None:
+        """Hold the store and build the index the tips are resolved against."""
         self._store = store
         self._index = Index(store)
 
@@ -149,9 +146,6 @@ class Bookmaker:
 
         live, _ = _priced(tip, placeable)
         unsent = f"{terms.stake} at {live:.3f}"
-
-        if self._dry_run:
-            return replace(result, refusal=Refusal(RefusalCode.DRY_RUN, unsent))
 
         if terms.mode is Mode.PAPER:
             return replace(result, refusal=Refusal(RefusalCode.PAPER_MODE, unsent))

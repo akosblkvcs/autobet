@@ -94,7 +94,7 @@ async def run_pipeline(
 
             for result in placement.results:
                 log.info(
-                    "bet_placed" if result.accepted else "bet_rejected",
+                    f"bet_{result.state}",
                     user=result.user_id,
                     legs=len(tip.legs),
                     odds=None if tip.odds is None else round(tip.odds, 3),

@@ -20,6 +20,7 @@ class Reports:
             SELECT (SELECT count(*) FROM messages) AS messages,
                    (SELECT count(*) FROM tips)     AS tips,
                    (SELECT count(*) FROM bets WHERE state = 'placed')  AS bets_placed,
+                   (SELECT count(*) FROM bets WHERE state = 'paper')   AS bets_paper,
                    (SELECT count(*) FROM bets WHERE state = 'refused') AS bets_refused,
                    (SELECT count(*) FROM bets WHERE state = 'error')   AS bets_failed,
                    (SELECT count(*) FROM tip_legs l

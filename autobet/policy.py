@@ -12,6 +12,10 @@ class Policy(BaseModel):
 
     model_config = ConfigDict(frozen=True, extra="forbid")
 
+    paper: bool = Field(
+        default=True,
+        description="Force every account to paper, whatever each person chose.",
+    )
     stake: Decimal = Field(
         default=Decimal("100"),
         ge=100,
@@ -78,7 +82,7 @@ class UserPolicy(BaseModel):
     def over(self, policy: Policy) -> Terms:
         """These terms with the service's defaults filled in where none was set."""
         return Terms(
-            mode=self.mode,
+            mode=Mode.PAPER if policy.paper else self.mode,
             paused=self.paused,
             stake=policy.stake if self.stake is None else self.stake,
             max_odds_drop_percent=(

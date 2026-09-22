@@ -28,9 +28,10 @@ class RefusalCode(StrEnum):
 
 
 class BetState(StrEnum):
-    """What became of a bet: staked, declined by us, or blown up mid-flight."""
+    """What became of a bet: staked, staked on paper, declined, or blown up."""
 
     PLACED = "placed"
+    PAPER = "paper"
     REFUSED = "refused"
     ERROR = "error"
 
@@ -44,6 +45,10 @@ class SelectionStatus(StrEnum):
     NO_OUTCOME = "no_outcome"
     NO_ODDS = "no_odds"
     AMBIGUOUS = "ambiguous"
+
+
+UNSENT = frozenset({RefusalCode.PAPER_MODE, RefusalCode.DRY_RUN})
+"""The bet stood and only the mode stopped it; `dry_run` is historical."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -202,6 +207,7 @@ class Verdict:
     refusal: Refusal | None = None
     error: str = ""
     reference: str = ""
+    state: BetState = BetState.PLACED
 
 
 @dataclass(frozen=True, slots=True)
@@ -257,7 +263,10 @@ class BetResult:
         if self.error:
             return BetState.ERROR
 
-        return BetState.REFUSED if self.refusal else BetState.PLACED
+        if self.refusal is None:
+            return BetState.PLACED
+
+        return BetState.PAPER if self.refusal.code in UNSENT else BetState.REFUSED
 
     @property
     def total_latency_ms(self) -> int:

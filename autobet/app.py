@@ -56,7 +56,7 @@ async def run_service(settings: Settings) -> None:
 
     state = PipelineState()
     telegram = Telegram(settings, integrations, store)
-    bookmaker = Bookmaker(settings, store)
+    bookmaker = Bookmaker(store)
     claude = build_claude(integrations.claude_api_key)
     parse = partial(
         parse_tip,
@@ -69,11 +69,7 @@ async def run_service(settings: Settings) -> None:
     for chat_id, title in telegram.watched.items():
         await store.archive.register_channel(chat_id, title)
 
-    log.info(
-        "service_configured",
-        channels=telegram.channels,
-        dry_run=settings.dry_run,
-    )
+    log.info("service_configured", channels=telegram.channels)
 
     server = _ManagedServer(
         uvicorn.Config(

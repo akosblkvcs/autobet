@@ -59,6 +59,7 @@ class Context:
         policy = await self.store.config.policy()
 
         return {
+            "paper": policy.paper,
             "stake": str(policy.stake),
             "max_odds_drop": f"{policy.max_odds_drop_percent:g}%",
             "mismatch_rise": f"{policy.mismatch_rise_percent:g}%",
@@ -82,7 +83,6 @@ class Context:
         idle = self.state.seconds_since_last_message()
 
         return {
-            "dry_run": self.settings.dry_run,
             "telegram_connected": self.telegram.healthy(),
             "uptime": humanize.naturaldelta(self.state.uptime_seconds),
             "messages_seen": self.state.processed,
