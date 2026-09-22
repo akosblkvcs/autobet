@@ -13,6 +13,7 @@ from telethon import TelegramClient, events
 from telethon.errors import (
     AuthKeyDuplicatedError,
     AuthKeyUnregisteredError,
+    RPCError,
     SessionExpiredError,
     SessionRevokedError,
 )
@@ -105,7 +106,7 @@ class Telegram:
         """A human label for a watched chat, falling back to its id."""
         try:
             entity = await self._client.get_entity(chat)
-        except ValueError, TypeError:
+        except ValueError, TypeError, RPCError:
             log.warning("chat_unnamed", chat=chat)
 
             return str(chat)
