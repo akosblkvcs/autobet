@@ -91,15 +91,23 @@ class Bookmaker:
 
             results = [replace(shared, user_id=account.user_id) for account in accounts]
         elif self._dry_run:
+            live, _ = _priced(tip, [offer for offer in offers if offer is not None])
+
             log.info(
                 "tip_observed",
                 legs=len(tip.legs),
                 resolved=sum(offer is not None for offer in offers),
                 accounts=len(accounts),
+                stake=tip.stake,
+                live_odds=round(live, 3),
             )
 
             results = [
-                replace(shared, user_id=account.user_id, reference="dry-run")
+                replace(
+                    shared,
+                    user_id=account.user_id,
+                    refusal=Refusal(RefusalCode.DRY_RUN, f"{tip.stake} at {live:.3f}"),
+                )
                 for account in accounts
             ]
         else:
