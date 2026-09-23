@@ -1,4 +1,4 @@
-"""The admin page: what the CLI changes, changed from a browser instead."""
+"""The admin section."""
 
 # pyright: reportUnusedFunction=false
 
@@ -20,9 +20,9 @@ Field = Annotated[str, Form()]
 Blank = Annotated[str, Form()]
 
 
-def _back() -> RedirectResponse:
-    """Back to the page, so a reload does not repeat the change."""
-    return RedirectResponse("/admin", status_code=303)
+def _back(tab: str) -> RedirectResponse:
+    """Back to the sub-tab, so a reload does not repeat the change."""
+    return RedirectResponse(f"/admin/{tab}", status_code=303)
 
 
 def _reason(refused: Exception) -> str:
@@ -61,24 +61,69 @@ def _fields(held: BaseModel) -> list[dict[str, JsonValue]]:
     ]
 
 
-async def _page(
+async def _settings(
     request: Request, context: Context, session: SignedIn, error: str = ""
 ) -> Response:
-    """The page as it stands, with a reason when a change was refused."""
+    """The limits and the keys, with a reason when a change was refused."""
     store = context.store
-    policy = await store.config.policy()
-    integrations = await store.config.integrations()
 
     return templates.TemplateResponse(
         request,
-        "admin.html",
+        "admin_settings.html",
         {
-            "limits": _fields(policy),
-            "keys": _fields(integrations),
+            "limits": _fields(await store.config.policy()),
+            "keys": _fields(await store.config.integrations()),
+            "error": error,
+            "session": session,
+        },
+        status_code=400 if error else 200,
+    )
+
+
+async def _book(
+    request: Request, context: Context, session: SignedIn, error: str = ""
+) -> Response:
+    """The book's endpoints, and whether it is armed."""
+    store = context.store
+
+    return templates.TemplateResponse(
+        request,
+        "admin_book.html",
+        {
             "book": _fields(Tippmixpro.model_validate(await store.books.stored())),
             "book_enabled": await store.books.enabled(),
-            "channels": await store.archive.channels(),
-            "people": await store.users.all(),
+            "error": error,
+            "session": session,
+        },
+        status_code=400 if error else 200,
+    )
+
+
+async def _users(
+    request: Request, context: Context, session: SignedIn, error: str = ""
+) -> Response:
+    """Everyone who has signed in, and whether they still may."""
+    return templates.TemplateResponse(
+        request,
+        "admin_users.html",
+        {
+            "people": await context.store.users.all(),
+            "error": error,
+            "session": session,
+        },
+        status_code=400 if error else 200,
+    )
+
+
+async def _channels(
+    request: Request, context: Context, session: SignedIn, error: str = ""
+) -> Response:
+    """The watched chats, enabled or not."""
+    return templates.TemplateResponse(
+        request,
+        "admin_channels.html",
+        {
+            "channels": await context.store.archive.channels(),
             "error": error,
             "session": session,
         },
@@ -91,14 +136,50 @@ def router(context: Context) -> APIRouter:
     api = APIRouter(prefix="/admin")
     store = context.store
 
-    @api.get("", response_class=HTMLResponse)
+    @api.get("")
     async def page(request: Request) -> Response:
+        guarded = await admin_only(request, store)
+
+        return guarded if isinstance(guarded, Response) else _back("settings")
+
+    @api.get("/settings", response_class=HTMLResponse)
+    async def settings(request: Request) -> Response:
         guarded = await admin_only(request, store)
 
         return (
             guarded
             if isinstance(guarded, Response)
-            else await _page(request, context, guarded)
+            else await _settings(request, context, guarded)
+        )
+
+    @api.get("/book", response_class=HTMLResponse)
+    async def book_page(request: Request) -> Response:
+        guarded = await admin_only(request, store)
+
+        return (
+            guarded
+            if isinstance(guarded, Response)
+            else await _book(request, context, guarded)
+        )
+
+    @api.get("/users", response_class=HTMLResponse)
+    async def users_page(request: Request) -> Response:
+        guarded = await admin_only(request, store)
+
+        return (
+            guarded
+            if isinstance(guarded, Response)
+            else await _users(request, context, guarded)
+        )
+
+    @api.get("/channels", response_class=HTMLResponse)
+    async def channels_page(request: Request) -> Response:
+        guarded = await admin_only(request, store)
+
+        return (
+            guarded
+            if isinstance(guarded, Response)
+            else await _channels(request, context, guarded)
         )
 
     @api.get("/bets", response_class=HTMLResponse)
@@ -126,14 +207,14 @@ def router(context: Context) -> APIRouter:
         # A blank field leaves the stored value alone, which is how a secret
         # stays editable on a page that never prints it.
         if not value:
-            return _back()
+            return _back("settings")
 
         try:
             await store.config.put(key, value, who.user.id)
         except (ValidationError, ValueError) as refused:
-            return await _page(request, context, who, _reason(refused))
+            return await _settings(request, context, who, _reason(refused))
 
-        return _back()
+        return _back("settings")
 
     @api.post("/book")
     async def book(
@@ -147,9 +228,9 @@ def router(context: Context) -> APIRouter:
         try:
             await store.books.put(key, value)
         except (ValidationError, ValueError) as refused:
-            return await _page(request, context, who, _reason(refused))
+            return await _book(request, context, who, _reason(refused))
 
-        return _back()
+        return _back("book")
 
     @api.post("/book/enable")
     async def book_enable(request: Request, csrf: Field) -> Response:
@@ -160,7 +241,7 @@ def router(context: Context) -> APIRouter:
 
         await store.books.enable(True)
 
-        return _back()
+        return _back("book")
 
     @api.post("/channel")
     async def channel(
@@ -176,7 +257,7 @@ def router(context: Context) -> APIRouter:
         else:
             await store.archive.unwatch(int(chat_id))
 
-        return _back()
+        return _back("channels")
 
     @api.post("/user")
     async def user(
@@ -188,12 +269,12 @@ def router(context: Context) -> APIRouter:
             return who
 
         if int(user_id) == who.user.id:
-            return await _page(
+            return await _users(
                 request, context, who, "disabling yourself would lock you out"
             )
 
         await store.users.set_status(int(user_id), active == "true")
 
-        return _back()
+        return _back("users")
 
     return api

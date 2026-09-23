@@ -1,0 +1,13 @@
+{% extends "base.html" %}
+{% from "_admin.html" import tabs, row %}
+
+{% block body %}
+{{ tabs("settings") }}
+{% if error %}<p class="error">{{ error }}</p>{% endif %}
+
+<h2>Limits</h2>
+{% for field in limits %}{{ row("/admin/setting", field, session.csrf) }}{% endfor %}
+
+<h2>Keys <abbr title="Read at startup, so a change here needs a restart. A blank field keeps what is stored.">*</abbr></h2>
+{% for field in keys %}{{ row("/admin/setting", field, session.csrf) }}{% endfor %}
+{% endblock %}
