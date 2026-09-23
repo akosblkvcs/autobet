@@ -88,16 +88,26 @@ def _shape(name: str) -> tuple[int, frozenset[float]]:
 
 
 def _asked(leg: TipLeg, event: IndexedEvent) -> list[str]:
-    """The market names a leg could mean, filling a `{csapat}` left unreplaced."""
-    if _TEAM_SLOT not in leg.market:
-        return [leg.market]
-
+    """The market names a leg could mean, with the team named as the book names it."""
     sides = two_sides(event.name)
 
     if sides is None:
         return [leg.market]
 
-    return [leg.market.replace(_TEAM_SLOT, side) for side in sides]
+    if _TEAM_SLOT in leg.market:
+        return [leg.market.replace(_TEAM_SLOT, side) for side in sides]
+
+    words = leg.market.split()
+
+    for length in (1, 2, 3):
+        named = event.side_of(" ".join(words[:length]))
+
+        if named is not None:
+            side = sides[0] if named == "home" else sides[1]
+
+            return [leg.market, " ".join([side, *words[length:]])]
+
+    return [leg.market]
 
 
 def _market_score(wanted: str, candidate: str) -> float:
