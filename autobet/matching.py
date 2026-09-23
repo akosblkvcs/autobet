@@ -27,6 +27,7 @@ _SCORE = re.compile(r"(\d+)\s*:\s*(\d+)")
 _SELECTION_PARTS = re.compile(r"\s*(?:/|,|\bvagy\b|\bor\b)\s*")
 _SHORTHAND = re.compile(r"[1x2]+")
 _TEAM_SLOT = "{csapat}"
+_LINE_SLOT = "{N}"
 _SIDED_LINE = re.compile(r"\(([-+]?\d+(?:[.,]\d+)?)\)")
 _LINE_TOKEN = re.compile(r"[-+]?\d+(?:[.,]\d+)?")
 _NUMERIC = re.compile(r"[-+]?\d+\.?\d*")
@@ -87,17 +88,44 @@ def _shape(name: str) -> tuple[int, frozenset[float]]:
     return sum(word == "+" for word in words), lines
 
 
-def _asked(leg: TipLeg, event: IndexedEvent) -> list[str]:
-    """The market names a leg could mean, filling a `{csapat}` left unreplaced."""
-    if _TEAM_SLOT not in leg.market:
-        return [leg.market]
+def _lined(market: str, leg: TipLeg) -> list[str]:
+    """The market with a `{N}` the model left behind filled from the selection."""
+    if _LINE_SLOT not in market:
+        return [market]
 
+    return [market.replace(_LINE_SLOT, f"{line:g}") for line in _lines_named(leg)]
+
+
+def _sided(market: str, leg: TipLeg, event: IndexedEvent) -> list[str]:
+    """The market with the team named as the book names it, as well as as written."""
     sides = two_sides(event.name)
 
     if sides is None:
-        return [leg.market]
+        return [market]
 
-    return [leg.market.replace(_TEAM_SLOT, side) for side in sides]
+    if _TEAM_SLOT in market:
+        return [market.replace(_TEAM_SLOT, side) for side in sides]
+
+    words = market.split()
+
+    for length in (1, 2, 3):
+        named = event.side_of(" ".join(words[:length]))
+
+        if named is not None:
+            side = sides[0] if named == "home" else sides[1]
+
+            return [market, " ".join([side, *words[length:]])]
+
+    return [market]
+
+
+def _asked(leg: TipLeg, event: IndexedEvent) -> list[str]:
+    """Every market name this leg could mean, with the slots the model left filled."""
+    return [
+        asked
+        for market in _lined(leg.market, leg)
+        for asked in _sided(market, leg, event)
+    ]
 
 
 def _market_score(wanted: str, candidate: str) -> float:
@@ -331,6 +359,17 @@ def _backs(
     return None
 
 
+def _bare(selection: str, event: IndexedEvent) -> str:
+    """The selection with a leading team dropped, which is how the book prints one."""
+    words = selection.replace(":", " ").split()
+
+    for length in (1, 2, 3):
+        if len(words) > length and event.side_of(" ".join(words[:length])):
+            return " ".join(words[length:])
+
+    return selection
+
+
 def _selection(leg: TipLeg, event: IndexedEvent) -> tuple[str | None, str | None]:
     """What the leg backs, as a header key and as an outcome code."""
     folded = fold(leg.selection)
@@ -338,7 +377,12 @@ def _selection(leg: TipLeg, event: IndexedEvent) -> tuple[str | None, str | None
     named = [piece for piece in pieces if piece is not None]
     whole: frozenset[str] = frozenset(named) if len(named) == len(pieces) else frozenset()
 
-    key = _SELECTION_KEYS.get(folded) or _over_under(folded) or _SIDE_KEYS.get(whole)
+    key = (
+        _SELECTION_KEYS.get(folded)
+        or _over_under(folded)
+        or _over_under(fold(_bare(leg.selection, event)))
+        or _SIDE_KEYS.get(whole)
+    )
     code = " / ".join(_SIDE_CODES[piece] for piece in named) if whole else None
 
     return key, code

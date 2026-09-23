@@ -100,8 +100,10 @@ def as_prompt(vocabulary: dict[str, list[str]]) -> str:
 
     return f"""
 These are the bet types this bookmaker lists, by sport. Take the one that is
-the same bet, keeping its wording, with `{{N}}` as the line and `{{csapat}}` as
-the team; keep the tipster's wording when none of them is the bet.
+the same bet and keep its wording, but **replace `{{N}}` with the line and
+`{{csapat}}` with the team as the tipster names it — never answer with a
+placeholder still in it**. Keep the tipster's wording when none of these is the
+bet.
 
 {listed}
 """
