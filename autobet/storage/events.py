@@ -3,7 +3,7 @@
 from collections.abc import Sequence
 from datetime import datetime
 
-from asyncpg import Pool
+from asyncpg import Pool, Record
 
 from autobet.matching import IndexedEvent, IndexedTournament, fold
 from autobet.storage.rows import event_row, to_event
@@ -109,3 +109,22 @@ class Events:
         assert row is not None
 
         return row["at"], row["events"]
+
+    async def summary(self) -> Record:
+        """What the board holds, how broad it is, and when it was last walked."""
+        row = await self._pool.fetchrow(
+            """
+            SELECT count(*)                                  AS events,
+                   count(DISTINCT sport)                     AS sports,
+                   count(DISTINCT tournament_id)             AS tournaments,
+                   count(*) FILTER (WHERE starts_at > now()) AS upcoming,
+                   count(*) FILTER (WHERE markets > 0)       AS priced,
+                   coalesce(sum(markets), 0)                 AS markets,
+                   min(indexed_at)                           AS built,
+                   min(starts_at) FILTER (WHERE starts_at > now()) AS next_off
+            FROM events
+            """
+        )
+        assert row is not None
+
+        return row

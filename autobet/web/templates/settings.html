@@ -26,7 +26,7 @@
   <button type="submit">{{ "Resume" if held.paused else "Pause" }}</button>
 </form>
 
-<h2>Limits <abbr title="Leave a field blank to use the default.">*</abbr></h2>
+<h2>Betting rules <abbr title="Leave a field blank to use the default.">*</abbr></h2>
 {{ number("stake", held.stake, defaults.stake, "stake" in own,
           "What you stake per tip; blank uses the default.") }}
 {{ number("max_odds_drop_percent", held.max_odds_drop_percent,

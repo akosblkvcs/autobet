@@ -67,14 +67,22 @@ class Context:
 
     async def index(self) -> dict[str, Any]:
         """What the stored event index holds and how stale it is."""
-        indexed_at, events = await self.store.events.freshness()
+        held = await self.store.events.summary()
+        built, next_off = held["built"], held["next_off"]
 
         return {
-            "events_indexed": events,
-            "index_built": (
-                f"{humanize.naturaldelta(utcnow() - indexed_at)} ago"
-                if indexed_at
-                else "not yet"
+            "events": held["events"],
+            "upcoming": held["upcoming"],
+            "sports": held["sports"],
+            "tournaments": held["tournaments"],
+            "priced": f"{held['priced']} ({held['markets']} markets)",
+            "next_off": (
+                "nothing ahead"
+                if next_off is None
+                else f"in {humanize.naturaldelta(next_off - utcnow())}"
+            ),
+            "built": (
+                f"{humanize.naturaldelta(utcnow() - built)} ago" if built else "not yet"
             ),
         }
 
@@ -83,11 +91,11 @@ class Context:
         idle = self.state.seconds_since_last_message()
 
         return {
-            "telegram_connected": self.telegram.healthy(),
-            "uptime": humanize.naturaldelta(self.state.uptime_seconds),
-            "messages_seen": self.state.processed,
-            "tips_parsed": self.state.tips,
+            "connected": self.telegram.healthy(),
             "last_message": (
                 "none yet" if idle is None else f"{humanize.naturaldelta(idle)} ago"
             ),
+            "messages_seen": self.state.processed,
+            "tips_parsed": self.state.tips,
+            "uptime": humanize.naturaldelta(self.state.uptime_seconds),
         }

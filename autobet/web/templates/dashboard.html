@@ -2,17 +2,23 @@
 
 {% macro stats(rows) %}
 <dl class="stats">
-  {% for name, value in rows.items() if value or value == 0 %}
+  {% for name, value in rows.items() if value or value == 0 or value is boolean %}
   <dt>{{ name.replace("_", " ") }}</dt>
+  {%- if value is sequence and value is not string and value is not mapping %}
+  <dd class="list">
+    {% for item in value %}<span class="chip">{{ item }}</span>{% endfor %}
+  </dd>
+  {%- else %}
   <dd>
-    {%- if value is mapping -%}
+    {%- if value is boolean -%}
+      <span class="flag {{ "on" if value else "off" }}">{{ "yes" if value else "no" }}</span>
+    {%- elif value is mapping -%}
       {% for key, inner in value.items() %}<div>{{ key }} {{ inner }}</div>{% endfor %}
-    {%- elif value is sequence and value is not string -%}
-      {% for item in value %}<div>{{ item }}</div>{% endfor %}
     {%- else -%}
       {{ value }}
     {%- endif -%}
   </dd>
+  {%- endif %}
   {% endfor %}
 </dl>
 {% endmacro %}
@@ -27,15 +33,15 @@
 {% block body %}
 <div class="counts">
   {{ tally("tips", totals.tips) }}
-  {{ tally("placed", totals.bets_placed) }}
-  {{ tally("paper", totals.bets_paper) }}
-  {{ tally("refused", totals.bets_refused) }}
-  {{ tally("failed", totals.bets_failed) }}
+  {{ tally("placed", totals.placed) }}
+  {{ tally("paper", totals.paper) }}
+  {{ tally("refused", totals.refused) }}
+  {{ tally("failed", totals.failed) }}
 </div>
 
 <div class="panels">
   <section class="panel">
-    <h2>Service</h2>
+    <h2>Telegram</h2>
     {{ stats(service) }}
   </section>
   <section class="panel">
@@ -43,12 +49,41 @@
     {{ stats(index) }}
   </section>
   <section class="panel">
-    <h2>Limits</h2>
+    <h2>Betting rules</h2>
     {{ stats(limits) }}
   </section>
-  <section class="panel">
-    <h2>Archive</h2>
-    {{ stats(archive) }}
+  <section class="panel wide">
+    <h2>Latency</h2>
+    <div class="scroll">
+      <table class="metrics">
+        <thead>
+          <tr>
+            <th>stage</th>
+            <th>samples</th>
+            {% for name in ["p50", "p90", "p95", "p99", "mean", "slowest"] %}
+            <th>{{ name }}</th>
+            {% endfor %}
+          </tr>
+        </thead>
+        <tbody>
+          {% for row in latency %}
+          <tr>
+            <td class="stage">{{ row.stage }}</td>
+            <td>{{ row.samples }}</td>
+            {% for name in ["p50", "p90", "p95", "p99", "mean", "slowest"] %}
+            <td>
+              {%- if row[name] is none -%}
+                <span class="quiet">&mdash;</span>
+              {%- else -%}
+                {{ row[name] }}&nbsp;ms
+              {%- endif -%}
+            </td>
+            {% endfor %}
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
   </section>
 </div>
 {% endblock %}
