@@ -1,10 +1,10 @@
 {% macro tabs(current) %}
 <nav class="tabs">
-  <a href="/admin/settings" class="{{ "on" if current == "settings" }}">settings</a>
+  <a href="/admin/activity" class="{{ "on" if current == "activity" }}">activity</a>
   <a href="/admin/users" class="{{ "on" if current == "users" }}">users</a>
   <a href="/admin/channels" class="{{ "on" if current == "channels" }}">channels</a>
-  <a href="/admin/book" class="{{ "on" if current == "book" }}">book</a>
-  <a href="/admin/bets" class="{{ "on" if current == "bets" }}">all bets</a>
+  <a href="/admin/books" class="{{ "on" if current == "books" }}">books</a>
+  <a href="/admin/settings" class="{{ "on" if current == "settings" }}">settings</a>
 </nav>
 {% endmacro %}
 

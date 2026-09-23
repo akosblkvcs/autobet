@@ -21,7 +21,7 @@ from autobet.models import (
     Tip,
     utcnow,
 )
-from autobet.policy import Mode, Policy, Terms
+from autobet.policy import Policy, Terms
 from autobet.session import mint_ce_session
 from autobet.storage import Store
 from autobet.storage.accounts import Account
@@ -147,7 +147,7 @@ class Bookmaker:
         live, _ = _priced(tip, placeable)
         unsent = f"{terms.stake} at {live:.3f}"
 
-        if terms.mode is Mode.PAPER:
+        if terms.paper_mode:
             return replace(result, refusal=Refusal(RefusalCode.PAPER_MODE, unsent))
 
         return await self._staked(book, tip, terms, shared, account)

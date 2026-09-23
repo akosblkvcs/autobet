@@ -2,7 +2,6 @@
 
 from dataclasses import dataclass
 from decimal import Decimal
-from enum import StrEnum
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -12,9 +11,9 @@ class Policy(BaseModel):
 
     model_config = ConfigDict(frozen=True, extra="forbid")
 
-    paper: bool = Field(
+    paper_mode: bool = Field(
         default=True,
-        description="Force every account to paper, whatever each person chose.",
+        description="Record what every bet would have been and send nothing.",
     )
     stake: Decimal = Field(
         default=Decimal("100"),
@@ -35,18 +34,11 @@ class Policy(BaseModel):
     )
 
 
-class Mode(StrEnum):
-    """Whether somebody's bets reach the book at all."""
-
-    PAPER = "paper"
-    LIVE = "live"
-
-
 @dataclass(frozen=True, slots=True)
 class Terms:
     """What one person's bet is judged against: no blanks left to resolve."""
 
-    mode: Mode
+    paper_mode: bool
     paused: bool
     stake: Decimal
     max_odds_drop_percent: float
@@ -58,10 +50,6 @@ class UserPolicy(BaseModel):
 
     model_config = ConfigDict(frozen=True, extra="forbid")
 
-    mode: Mode = Field(
-        default=Mode.PAPER,
-        description="paper resolves, prices and records without sending anything.",
-    )
     paused: bool = Field(
         default=False,
         description="Stake nothing for this person until they say otherwise.",
@@ -87,7 +75,7 @@ class UserPolicy(BaseModel):
     def over(self, policy: Policy) -> Terms:
         """These terms with the service's defaults filled in where none was set."""
         return Terms(
-            mode=Mode.PAPER if policy.paper else self.mode,
+            paper_mode=policy.paper_mode,
             paused=self.paused,
             stake=policy.stake if self.stake is None else self.stake,
             max_odds_drop_percent=(

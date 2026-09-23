@@ -243,7 +243,7 @@ async def cmd_user(
         rise = _shown(terms.max_odds_rise_percent, "max_odds_rise_percent" in own)
         print(
             f"{person.user.id:>4}  {person.user.display:<28} "
-            f"{terms.mode:<6} {'paused' if terms.paused else 'active':<7} "
+            f"{'paused' if terms.paused else 'active':<7} "
             f"stake {_shown(terms.stake, 'stake' in own):<9} "
             f"drop {drop:<8} rise {rise}"
         )

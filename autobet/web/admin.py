@@ -140,7 +140,7 @@ def router(context: Context) -> APIRouter:
     async def page(request: Request) -> Response:
         guarded = await admin_only(request, store)
 
-        return guarded if isinstance(guarded, Response) else _back("settings")
+        return guarded if isinstance(guarded, Response) else _back("activity")
 
     @api.get("/settings", response_class=HTMLResponse)
     async def settings(request: Request) -> Response:
@@ -152,7 +152,7 @@ def router(context: Context) -> APIRouter:
             else await _settings(request, context, guarded)
         )
 
-    @api.get("/book", response_class=HTMLResponse)
+    @api.get("/books", response_class=HTMLResponse)
     async def book_page(request: Request) -> Response:
         guarded = await admin_only(request, store)
 
@@ -182,7 +182,7 @@ def router(context: Context) -> APIRouter:
             else await _channels(request, context, guarded)
         )
 
-    @api.get("/bets", response_class=HTMLResponse)
+    @api.get("/activity", response_class=HTMLResponse)
     async def everyones(request: Request) -> Response:
         guarded = await admin_only(request, store)
 
@@ -216,7 +216,7 @@ def router(context: Context) -> APIRouter:
 
         return _back("settings")
 
-    @api.post("/book")
+    @api.post("/books")
     async def book(
         request: Request, csrf: Field, key: Field, value: Blank = ""
     ) -> Response:
@@ -230,9 +230,9 @@ def router(context: Context) -> APIRouter:
         except (ValidationError, ValueError) as refused:
             return await _book(request, context, who, _reason(refused))
 
-        return _back("book")
+        return _back("books")
 
-    @api.post("/book/enable")
+    @api.post("/books/enable")
     async def book_enable(request: Request, csrf: Field) -> Response:
         who = await _actor(request, store, csrf)
 
@@ -241,7 +241,7 @@ def router(context: Context) -> APIRouter:
 
         await store.books.enable(True)
 
-        return _back("book")
+        return _back("books")
 
     @api.post("/channel")
     async def channel(

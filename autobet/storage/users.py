@@ -22,7 +22,6 @@ def _hashed(token: str) -> str:
 def _to_policy(row: Record) -> UserPolicy:
     """One `user_settings` row; a null column means the service decides."""
     return UserPolicy(
-        mode=row["mode"],
         paused=row["paused"],
         stake=row["stake"],
         max_odds_drop_percent=row["max_odds_drop_percent"],
@@ -129,7 +128,7 @@ class Users:
         """Each of these people's terms, defaulted for anyone with no row."""
         rows = await self._pool.fetch(
             """
-            SELECT user_id, mode, paused, stake, max_odds_drop_percent,
+            SELECT user_id, paused, stake, max_odds_drop_percent,
                    max_odds_rise_percent
             FROM user_settings WHERE user_id = ANY($1::bigint[])
             """,
@@ -171,7 +170,7 @@ class Users:
         if row is None:
             return set()
 
-        return {"mode", "paused"} | {
+        return {"paused"} | {
             name
             for name in ("stake", "max_odds_drop_percent", "max_odds_rise_percent")
             if row[name] is not None

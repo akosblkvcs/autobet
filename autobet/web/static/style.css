@@ -61,6 +61,46 @@ h2:first-child {
   margin-top: 0;
 }
 
+.counts {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(7rem, 1fr));
+  gap: .6rem;
+  margin-bottom: 1.2rem;
+}
+
+.tally {
+  display: flex;
+  flex-direction: column;
+  gap: .1rem;
+  padding: .7rem .8rem;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--card);
+}
+
+.tally .figure {
+  font-size: 1.5rem;
+  font-weight: 600;
+}
+
+.panels {
+  columns: 20rem;
+  column-gap: .8rem;
+}
+
+.panel {
+  break-inside: avoid;
+  margin: 0 0 .8rem;
+  padding: .8rem;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--card);
+}
+
+.panel h2 {
+  margin-top: 0;
+}
+
 .stats {
   display: grid;
   grid-template-columns: auto 1fr;
@@ -160,9 +200,10 @@ h2:first-child {
 .tabs {
   display: flex;
   flex-wrap: wrap;
-  gap: 0 1.2rem;
-  margin-bottom: 1.2rem;
-  padding-bottom: .5rem;
+  justify-content: center;
+  gap: .3rem 1.4rem;
+  margin-bottom: 1.4rem;
+  padding-bottom: .6rem;
   border-bottom: 1px solid var(--line);
 }
 
@@ -310,7 +351,7 @@ h2 abbr {
   }
 
   .stats {
-    grid-template-columns: 12rem 1fr;
+    grid-template-columns: 10rem 1fr;
   }
 
   .bar {

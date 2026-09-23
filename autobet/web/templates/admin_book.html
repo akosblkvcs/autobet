@@ -2,15 +2,15 @@
 {% from "_admin.html" import tabs, row %}
 
 {% block body %}
-{{ tabs("book") }}
+{{ tabs("books") }}
 {% if error %}<p class="error">{{ error }}</p>{% endif %}
 
 <h2>tippmixpro <span class="quiet">{{ "enabled" if book_enabled else "not enabled" }}</span></h2>
 {% if not book_enabled %}
-<form class="inline" method="post" action="/admin/book/enable">
+<form class="inline" method="post" action="/admin/books/enable">
   <input type="hidden" name="csrf" value="{{ session.csrf }}">
   <button type="submit">Enable book</button>
 </form>
 {% endif %}
-{% for field in book %}{{ row("/admin/book", field, session.csrf) }}{% endfor %}
+{% for field in book %}{{ row("/admin/books", field, session.csrf) }}{% endfor %}
 {% endblock %}

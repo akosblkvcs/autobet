@@ -59,7 +59,7 @@ class Context:
         policy = await self.store.config.policy()
 
         return {
-            "paper": policy.paper,
+            "paper_mode": policy.paper_mode,
             "stake": str(policy.stake),
             "max_odds_drop": f"{policy.max_odds_drop_percent:g}%",
             "max_odds_rise": f"{policy.max_odds_rise_percent:g}%",

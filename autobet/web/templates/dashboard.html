@@ -2,7 +2,7 @@
 
 {% macro stats(rows) %}
 <dl class="stats">
-  {% for name, value in rows.items() %}
+  {% for name, value in rows.items() if value or value == 0 %}
   <dt>{{ name.replace("_", " ") }}</dt>
   <dd>
     {%- if value is mapping -%}
@@ -17,17 +17,38 @@
 </dl>
 {% endmacro %}
 
+{% macro tally(name, value) %}
+<div class="tally">
+  <span class="figure">{{ value }}</span>
+  <span class="quiet">{{ name.replace("_", " ") }}</span>
+</div>
+{% endmacro %}
+
 {% block body %}
-<h2>Service</h2>
-{{ stats(service) }}
+<div class="counts">
+  {{ tally("tips", totals.tips) }}
+  {{ tally("placed", totals.bets_placed) }}
+  {{ tally("paper", totals.bets_paper) }}
+  {{ tally("refused", totals.bets_refused) }}
+  {{ tally("failed", totals.bets_failed) }}
+</div>
 
-<h2>Index</h2>
-{{ stats(index) }}
-
-<h2>Limits</h2>
-{{ stats(limits) }}
-
-<h2>Totals</h2>
-{{ stats(totals) }}
-
+<div class="panels">
+  <section class="panel">
+    <h2>Service</h2>
+    {{ stats(service) }}
+  </section>
+  <section class="panel">
+    <h2>Index</h2>
+    {{ stats(index) }}
+  </section>
+  <section class="panel">
+    <h2>Limits</h2>
+    {{ stats(limits) }}
+  </section>
+  <section class="panel">
+    <h2>Archive</h2>
+    {{ stats(archive) }}
+  </section>
+</div>
 {% endblock %}
