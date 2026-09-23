@@ -1,0 +1,30 @@
+{% macro tabs(current) %}
+<nav class="tabs">
+  <a href="/admin/settings" class="{{ "on" if current == "settings" }}">settings</a>
+  <a href="/admin/users" class="{{ "on" if current == "users" }}">users</a>
+  <a href="/admin/channels" class="{{ "on" if current == "channels" }}">channels</a>
+  <a href="/admin/book" class="{{ "on" if current == "book" }}">book</a>
+  <a href="/admin/bets" class="{{ "on" if current == "bets" }}">all bets</a>
+</nav>
+{% endmacro %}
+
+{% macro row(action, field, csrf) %}
+<form class="inline{{ " switch" if field.switch }}" method="post" action="{{ action }}">
+  <input type="hidden" name="csrf" value="{{ csrf }}">
+  <input type="hidden" name="key" value="{{ field.name }}">
+  {% if field.switch %}
+  <span class="name" title="{{ field.description }}">{{ field.name.replace("_", " ") }}</span>
+  <span class="state">{{ "on" if field.set else "off" }}</span>
+  <input type="hidden" name="value" value="{{ "false" if field.set else "true" }}">
+  <button type="submit">{{ "Disable" if field.set else "Enable" }}</button>
+  {% else %}
+  <label>{{ field.name.replace("_", " ") }}
+    <input name="value" value="{{ field.value }}" autocapitalize="off" autocomplete="off"
+           spellcheck="false" title="{{ field.description }}"
+           {% if field.secret %}type="password"
+           placeholder="{{ 'configured' if field.set else 'not configured' }}"{% endif %}>
+  </label>
+  <button type="submit">Set</button>
+  {% endif %}
+</form>
+{% endmacro %}

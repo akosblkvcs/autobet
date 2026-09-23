@@ -1,0 +1,26 @@
+{% extends "base.html" %}
+{% from "_admin.html" import tabs %}
+
+{% block body %}
+{{ tabs("channels") }}
+{% if error %}<p class="error">{{ error }}</p>{% endif %}
+
+<ul class="rows plain">
+  {% for chat_id, title, enabled in channels %}
+  <li>
+    <form class="inline switch" method="post" action="/admin/channel">
+      <input type="hidden" name="csrf" value="{{ session.csrf }}">
+      <input type="hidden" name="chat_id" value="{{ chat_id }}">
+      <input type="hidden" name="enabled" value="{{ "false" if enabled else "true" }}">
+      <span class="who">
+        <span class="name">{{ title }}</span>
+        <span class="quiet">{{ chat_id }}</span>
+      </span>
+      <button type="submit">{{ "Disable" if enabled else "Enable" }}</button>
+    </form>
+  </li>
+  {% else %}
+  <li class="quiet">No chats watched yet.</li>
+  {% endfor %}
+</ul>
+{% endblock %}
