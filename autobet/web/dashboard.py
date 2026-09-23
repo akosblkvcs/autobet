@@ -7,8 +7,6 @@ from fastapi.responses import HTMLResponse, Response
 
 from autobet.web.context import Context, templates, whoever
 
-_COUNTED = frozenset({"tips", "bets_placed", "bets_paper", "bets_refused", "bets_failed"})
-
 
 def router(context: Context) -> APIRouter:
     """Build the / route."""
@@ -22,22 +20,16 @@ def router(context: Context) -> APIRouter:
             return session
 
         reports = context.store.reports
-        latency = await reports.latency_percentiles()
-        totals = await reports.totals()
 
         return templates.TemplateResponse(
             request,
             "dashboard.html",
             {
-                "service": context.status()
-                | {"channels": list(context.telegram.channels)},
+                "service": context.service(),
                 "index": await context.index(),
-                "limits": await context.limits(),
-                "totals": totals,
-                "archive": {
-                    name: value for name, value in totals.items() if name not in _COUNTED
-                }
-                | {"transport_latency_ms": latency},
+                "limits": await context.limits(session.user.id),
+                "totals": await reports.totals(session.user.id),
+                "latency": await reports.latency(),
                 "session": session,
             },
         )

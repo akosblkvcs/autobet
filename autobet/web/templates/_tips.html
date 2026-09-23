@@ -41,12 +41,14 @@
     {% for verdict in row.verdicts %}
     <div class="verdict {{ verdict.state }}">
       {%- if verdict.who and row.verdicts | length > 1 %}{{ verdict.who }} &middot; {% endif %}
-      {%- if verdict.state == "paper" %}paper &middot; {{ verdict.refusal.detail }}
-        &middot; {{ verdict.refusal.code.replace("_", " ") }}
-      {%- elif verdict.refusal %}refused &middot; {{ verdict.refusal.code.replace("_", " ") }}
+      {%- if verdict.state == "paper" %}<span class="tag">paper</span>
+        &middot; {{ verdict.refusal.detail }}
+        &middot; <span class="code">{{ verdict.refusal.code.replace("_", " ") }}</span>
+      {%- elif verdict.refusal %}<span class="tag">refused</span>
+        &middot; <span class="code">{{ verdict.refusal.code.replace("_", " ") }}</span>
         {%- if verdict.refusal.detail %} &middot; {{ verdict.refusal.detail }}{% endif %}
-      {%- elif verdict.error %}failed &middot; {{ verdict.error }}
-      {%- else %}placed &middot; {{ verdict.reference }}{% endif %}
+      {%- elif verdict.error %}<span class="tag">failed</span> &middot; {{ verdict.error }}
+      {%- else %}<span class="tag">placed</span> &middot; {{ verdict.reference }}{% endif %}
     </div>
     {% endfor %}
   </li>

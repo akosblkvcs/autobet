@@ -14,9 +14,8 @@ def router(context: Context) -> APIRouter:
 
     @api.get("/healthz")
     async def healthz() -> JSONResponse:
-        body = context.status()
-        ok = body["telegram_connected"]
+        ok = context.telegram.healthy()
 
-        return JSONResponse(body, status_code=200 if ok else 503)
+        return JSONResponse(context.status(), status_code=200 if ok else 503)
 
     return api

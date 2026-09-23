@@ -9,13 +9,18 @@
 <header class="bar">
   <span class="brand">autobet</span>
   {% if session is defined and session %}
+  {% set here = request.url.path %}
+  {% macro nav(href, label) %}
+  <a href="{{ href }}"
+     class="{{ "on" if here == href or here.startswith(href ~ "/") else "" }}">{{ label }}</a>
+  {%- endmacro %}
   <nav>
-    <a href="/">dashboard</a>
-    <a href="/bets">bets</a>
-    <a href="/events">events</a>
-    <a href="/settings">settings</a>
-    <a href="/account">account</a>
-    {% if session.user.is_admin %}<a href="/admin">admin</a>{% endif %}
+    {{ nav("/", "dashboard") }}
+    {{ nav("/bets", "bets") }}
+    {{ nav("/events", "events") }}
+    {{ nav("/settings", "settings") }}
+    {{ nav("/account", "account") }}
+    {% if session.user.is_admin %}{{ nav("/admin", "admin") }}{% endif %}
   </nav>
   <span class="who quiet">{{ session.user.display }}</span>
   {% endif %}
