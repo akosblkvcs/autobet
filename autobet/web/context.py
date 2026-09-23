@@ -62,7 +62,7 @@ class Context:
             "paper": policy.paper,
             "stake": str(policy.stake),
             "max_odds_drop": f"{policy.max_odds_drop_percent:g}%",
-            "mismatch_rise": f"{policy.mismatch_rise_percent:g}%",
+            "max_odds_rise": f"{policy.max_odds_rise_percent:g}%",
         }
 
     async def index(self) -> dict[str, Any]:

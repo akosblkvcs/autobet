@@ -101,6 +101,7 @@ async def run_pipeline(
                     stake=result.stake,
                     reference=result.reference,
                     refusal=None if result.refusal is None else result.refusal.code,
+                    detail=None if result.refusal is None else result.refusal.detail,
                     error=result.error or None,
                     latency_ms=result.total_latency_ms,
                 )

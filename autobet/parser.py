@@ -17,75 +17,57 @@ log = structlog.get_logger(__name__)
 
 _VISION_MODEL = "claude-opus-5"
 
-_SLIP_PROMPT = """This image was posted by a sports betting tipster. Decide what
-it is, then read it.
+_SLIP_PROMPT = """This image was posted by a sports betting tipster. Decide
+what it is, then read it.
 
 kind:
-- "to_place" — a betting slip proposing a bet that has not been settled: it
-  shows selections with their odds, and no result.
-- "settled" — anything reporting what already happened: a won or lost slip, a
-  results announcement, or a month-end recap listing many past bets, usually
-  with ticks, crosses, a profit total or a balance.
-- "other" — anything else, such as marketing, a league header or a photo that
-  is not a slip at all.
+- "to_place" — a slip proposing a bet that has not been settled: selections
+  with their odds, and no result.
+- "settled" — anything reporting what already happened, however many numbers it
+  holds: a won or lost slip, a results announcement, a month's recap with ticks,
+  crosses, a profit total or a balance. **A recap of many settled bets is never
+  an accumulator**: those bets are separate and already finished, and staking
+  them as one slip would be a wager nobody proposed.
+- "other" — anything else: marketing, a league header, a photo that is no slip.
 
-Only "to_place" is a bet we can make. **A recap listing many settled bets is
-"settled", never an accumulator** — the bets on it are separate and already
-finished, and staking them as one slip would be a wager nobody proposed.
+Only "to_place" is a bet we can make; return one leg per selection, in the
+order shown.
 
-For "to_place", return one leg per selection, in the order shown; several
-selections mean an accumulator. For anything else return no legs.
-
-- sport: which sport this is, named as the bet-type list below names it
-  (or in Hungarian if there is no list).
+- sport: as the bet-type list below names it, else in Hungarian.
 - event: the two teams or competitors, as printed.
-- market: the bet type, as printed, such as "1X2 - Rendes játékidő" or
-  "Money Line - Match".
-- selection: the outcome being backed, as printed.
-- odds: the decimal odds for that leg, or null if the slip does not price it.
-  The slips use both a comma and a point as the decimal separator, so "1,82"
-  and "1.82" are both 1.82.
-
-Keep the wording exactly as it appears, in its original language; it has to
-match the bookmaker's own page later."""
+- market: the bookmaker's name for this bet, taken from the list below when
+  anything there is the same bet — wording and period included, since each
+  sport names its periods its own way. When nothing there is this bet, keep the
+  slip's own words rather than inventing a name. Keep any line it prints, with
+  its sign.
+- selection: the outcome backed, as printed.
+- odds: the decimal odds, or null when the slip does not price the leg. A slip
+  writes "1,82" and "1.82" for the same 1.82.
+"""
 
 
 _TEXT_PROMPT = """This message was posted by a sports betting tipster. Decide
 what it is, then read it.
 
 kind:
-- "to_place" — it proposes a bet that has not been settled yet: an event, what
-  is being backed, and the odds.
-- "settled" — it reports what already happened: a won or lost tip, a results
-  announcement, or a summary of a month's tips with hit rates and profit.
-- "other" — anything else: advertising a group, commentary, a greeting.
+- "to_place" — it proposes a bet that has not been settled yet.
+- "settled" — it reports what already happened, however many numbers it holds:
+  a won or lost tip, a results announcement, a month's summary.
+- "other" — anything else: advertising, commentary, a greeting.
 
-Only "to_place" is a bet we can make. **A summary of past tips is "settled",
-never a bet**, however many numbers it contains.
+Only "to_place" is a bet we can make; return one leg per selection.
 
-For "to_place", return one leg per selection. Most messages hold one; several
-mean an accumulator.
-
-- sport: which sport this is, named as the bet-type list below names it
-  (or in Hungarian if there is no list).
-- event: the two teams or competitors, exactly as written in the message.
-- market: **the bookmaker's name for the bet type, not the tipster's phrasing.**
-  The tipster writes prose; translate it to the market the bookmaker lists, in
-  Hungarian, including the event part. These examples are football:
-    "X nyer (rendes játékidő)"         -> "1X2 - Rendes játékidő"
-    "Over 2.5 gól"                     -> "Gólszám 2.5 - Rendes játékidő"
-    "X -2 ázsiai hendikep"             -> "Ázsiai hendikep -2 - Rendes játékidő"
-  **The part after the dash is not a constant.** Each sport names the period
-  its own way, and the bet-type list below is the only source for it — a
-  basketball handicap is listed as "- Hosszabbítással", so calling it
-  "- Rendes játékidő" names a market this bookmaker does not have.
-  Keep the line the tipster quoted, with its sign, exactly as they wrote it.
-  If you cannot map the bet confidently to a market a bookmaker would list,
-  return no legs rather than inventing one.
-- selection: what is being backed, as the bookmaker would label it — a team
-  name for a winner market, "Igen"/"Nem" for both-teams-to-score, "Több, mint
-  N"/"Kevesebb, mint N" for totals, "Döntetlen" for a draw.
-- odds: the decimal odds, as a number, or null when the tipster gives none.
+- sport: as the bet-type list below names it, else in Hungarian.
+- event: the two teams or competitors, as written.
+- market: the bookmaker's name for this bet, taken from the list below when
+  anything there is the same bet — wording and period included, since each
+  sport names its periods its own way. When nothing there is this bet, keep the
+  tipster's own words rather than inventing a name. Keep any line they quoted,
+  with its sign.
+- selection: what is backed, labelled as the bookmaker would: a team name,
+  "Igen"/"Nem", "Több, mint N"/"Kevesebb, mint N", "Döntetlen".
+- odds: the decimal odds, or null when the tipster gives none. "1,82" and
+  "1.82" are both 1.82.
 """
 
 
@@ -112,14 +94,12 @@ def build_claude(api_key: str) -> AsyncAnthropic:
     return AsyncAnthropic(api_key=api_key)
 
 
-def build_text_prompt(settings: Settings) -> str:
-    """The text prompt, with the bookmaker's own bet types appended to it."""
-    return _TEXT_PROMPT + markets.as_prompt(markets.load(settings.market_families))
+def build_vocabulary(settings: Settings) -> str:
+    """The bookmaker's own bet types, appended to whichever prompt runs."""
+    return markets.as_prompt(markets.load(settings.market_families))
 
 
-def _content(
-    message: IncomingMessage, text_prompt: str
-) -> list[ContentBlockParam] | None:
+def _content(message: IncomingMessage, vocabulary: str) -> list[ContentBlockParam] | None:
     """What to send the model for this message, or None if there is nothing."""
     if message.media_path is not None:
         image = base64.standard_b64encode(Path(message.media_path).read_bytes()).decode()
@@ -133,12 +113,15 @@ def _content(
                     "data": image,
                 },
             },
-            {"type": "text", "text": _SLIP_PROMPT},
+            {"type": "text", "text": _SLIP_PROMPT + vocabulary},
         ]
 
     if message.text.strip():
         return [
-            {"type": "text", "text": text_prompt + "\n\nThe message:\n" + message.text}
+            {
+                "type": "text",
+                "text": _TEXT_PROMPT + vocabulary + "\n\nThe message:\n" + message.text,
+            }
         ]
 
     return None
@@ -148,19 +131,19 @@ async def parse_tip(
     message: IncomingMessage,
     *,
     claude: AsyncAnthropic,
-    text_prompt: str,
+    vocabulary: str,
 ) -> Tip | None:
     """Extract a tip from a message's screenshot, or None if there is not one.
 
     Args:
         message: The archived message: its screenshot if it has one, else its text.
         claude: Client used for the extraction.
-        text_prompt: The prompt for a text tip, from :func:`build_text_prompt`.
+        vocabulary: The book's bet types, from :func:`build_vocabulary`.
 
     Returns:
         The tip the message describes, or None for anything that is not one.
     """
-    content = _content(message, text_prompt)
+    content = _content(message, vocabulary)
 
     if content is None:
         return None

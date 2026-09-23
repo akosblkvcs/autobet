@@ -99,9 +99,9 @@ def as_prompt(vocabulary: dict[str, list[str]]) -> str:
     )
 
     return f"""
-These are the bet types this bookmaker lists, by sport. Name the market with
-the one that fits, keeping its wording exactly, with `{{N}}` replaced by the
-line and `{{csapat}}` by the team. Return no legs if none of them is the bet.
+These are the bet types this bookmaker lists, by sport. Take the one that is
+the same bet, keeping its wording, with `{{N}}` as the line and `{{csapat}}` as
+the team; keep the tipster's wording when none of them is the bet.
 
 {listed}
 """

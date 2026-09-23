@@ -39,5 +39,8 @@
           "What you stake per tip; blank uses the default.") }}
 {{ number("max_odds_drop_percent", held.max_odds_drop_percent,
           defaults.max_odds_drop_percent, "max_odds_drop_percent" in own,
-          "Abandon the bet when the live price fell this far below the tip.") }}
+          "How far below the tipster's price you still bet.") }}
+{{ number("max_odds_rise_percent", held.max_odds_rise_percent,
+          defaults.max_odds_rise_percent, "max_odds_rise_percent" in own,
+          "How far above the tipster's price you still bet.") }}
 {% endblock %}

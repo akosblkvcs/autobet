@@ -239,11 +239,13 @@ async def cmd_user(
         held = await store.users.policy(person.user.id)
         own = await store.users.stored_policy(person.user.id)
         terms = held.over(policy)
+        drop = _shown(terms.max_odds_drop_percent, "max_odds_drop_percent" in own)
+        rise = _shown(terms.max_odds_rise_percent, "max_odds_rise_percent" in own)
         print(
             f"{person.user.id:>4}  {person.user.display:<28} "
             f"{terms.mode:<6} {'paused' if terms.paused else 'active':<7} "
             f"stake {_shown(terms.stake, 'stake' in own):<9} "
-            f"drop {_shown(terms.max_odds_drop_percent, 'max_odds_drop_percent' in own)}"
+            f"drop {drop:<8} rise {rise}"
         )
 
     if people:
