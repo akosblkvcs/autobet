@@ -1,6 +1,12 @@
+<div class="tips-header">
+  <form method="post" action="/tips/sync">
+    <button type="submit">Check Bet Outcomes</button>
+  </form>
+</div>
+
 <ul class="tips">
   {% for row in rows %}
-  <li class="tip">
+  <li class="tip {{ row.settlement if row.settlement else '' }}">
     <div class="meta">
       <span>{{ row.message.received_at.strftime("%m-%d %H:%M:%S") }}</span>
       <span>{{ row.message.transport_latency_ms }}&nbsp;ms</span>
@@ -39,12 +45,14 @@
     {% endif %}
 
     {% for verdict in row.verdicts %}
-    <div class="verdict {{ "refused" if verdict.refusal else "failed" if verdict.error else "quiet" }}">
+    <div class="verdict {{ verdict.settlement if verdict.settlement else ('refused' if verdict.refusal else 'failed' if verdict.error else 'quiet') }}">
       {%- if verdict.who and row.verdicts | length > 1 %}{{ verdict.who }} &middot; {% endif %}
       {%- if verdict.refusal %}refused &middot; {{ verdict.refusal.code.replace("_", " ") }}
         {%- if verdict.refusal.detail %} &middot; {{ verdict.refusal.detail }}{% endif %}
       {%- elif verdict.error %}failed &middot; {{ verdict.error }}
-      {%- else %}placed &middot; {{ verdict.reference }}{% endif %}
+      {%- else %}placed &middot; {{ verdict.reference }}
+        {%- if verdict.settlement %} &middot; <span class="outcome {{ verdict.settlement }}">{{ verdict.settlement.replace("_", " ") | upper }}</span>{% if verdict.returned is not none and verdict.returned > 0 %} &middot; payout {{ verdict.returned }} HUF{% endif %}{% endif %}
+      {%- endif %}
     </div>
     {% endfor %}
   </li>

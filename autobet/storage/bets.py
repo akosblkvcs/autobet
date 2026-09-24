@@ -1,5 +1,7 @@
 """Tips, what their legs resolved to, and what each user did about them."""
 
+from decimal import Decimal
+
 from asyncpg import Pool, Record
 from asyncpg.pool import PoolConnectionProxy
 
@@ -28,6 +30,8 @@ def _to_verdict(row: Record) -> Verdict:
         ),
         error=row["refusal_detail"] if row["state"] == BetState.ERROR else "",
         reference=row["reference"],
+        settlement=row["settlement"] or "",
+        returned=row["returned"],
     )
 
 
@@ -235,6 +239,8 @@ class Bets:
             """
             SELECT b.tip_id, b.state, b.refusal_code, b.refusal_detail,
                    coalesce(b.reference, '') AS reference,
+                   coalesce(b.settlement, '') AS settlement,
+                   b.returned,
                    coalesce(u.email, '') AS who
             FROM bets b
             LEFT JOIN users u ON u.id = b.user_id
@@ -264,3 +270,57 @@ class Bets:
             )
 
         return found
+
+    async def pending(
+        self,
+        user_id: int | None = None,
+        *,
+        due_only: bool = True,
+        min_age_minutes: int = 60,
+    ) -> list[Record]:
+        """All placed bets with a reference awaiting settlement, oldest first.
+
+        When `due_only=True`, only bets whose matches kicked off at least
+        `min_age_minutes` ago (starts_at <= now() - interval) are returned,
+        preventing premature calls on future or brand-new events.
+        """
+        return await self._pool.fetch(
+            """
+            SELECT b.id, b.tip_id, b.user_id, b.reference, b.stake, b.odds, b.placed_at,
+                   max(coalesce(s.starts_at, b.placed_at)) AS latest_start
+            FROM bets b
+            JOIN tip_legs tl ON tl.tip_id = b.tip_id
+            LEFT JOIN selections s ON s.tip_leg_id = tl.id
+            WHERE b.state = 'placed'
+              AND b.reference <> ''
+              AND (b.settlement IS NULL OR b.settlement = 'pending')
+              AND ($1::bigint IS NULL OR b.user_id = $1)
+            GROUP BY b.id, b.tip_id, b.user_id, b.reference, b.stake, b.odds, b.placed_at
+            HAVING NOT $2::boolean
+                OR max(coalesce(s.starts_at, b.placed_at)) <= now() - ($3::integer * interval '1 minute')
+            ORDER BY b.placed_at ASC
+            """,
+            user_id,
+            due_only,
+            min_age_minutes,
+        )
+
+    async def settle(
+        self,
+        bet_id: int,
+        settlement: str,
+        returned: Decimal | None = None,
+    ) -> None:
+        """Record the outcome of a placed bet."""
+        await self._pool.execute(
+            """
+            UPDATE bets
+            SET settlement = $2,
+                returned = $3,
+                settled_at = now()
+            WHERE id = $1
+            """,
+            bet_id,
+            settlement,
+            returned,
+        )

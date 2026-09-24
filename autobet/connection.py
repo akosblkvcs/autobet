@@ -65,9 +65,15 @@ class Connection:
         frame: list[Any] = json.loads(await self._socket.recv())
 
         if frame[0] == _WAMP_RESULT:
-            answer: dict[str, Any] = frame[4]
-
-            return answer
+            if len(frame) > 4 and isinstance(frame[4], dict) and frame[4]:
+                return frame[4]
+            if len(frame) > 3 and frame[3]:
+                if isinstance(frame[3], list) and len(frame[3]) == 1 and isinstance(frame[3][0], dict):
+                    return frame[3][0]
+                return {"result": frame[3]}
+            if len(frame) > 4 and isinstance(frame[4], dict):
+                return frame[4]
+            return {}
 
         failure = _describe(frame[4:])
 
@@ -147,6 +153,21 @@ class Connection:
                     for offer in offers
                 ],
             },
+        )
+
+    async def bet_details(self, bet_id: str | int) -> dict[str, Any]:
+        """Fetch details and settlement status of one bet by its id or reference."""
+        payload: dict[str, Any] = {
+            "betId": int(bet_id) if str(bet_id).isdigit() else str(bet_id),
+            "lang": "hu",
+        }
+        return await self.call("/sports#betDetails", payload)
+
+    async def open_bets(self, page: int = 1, page_size: int = 50) -> dict[str, Any]:
+        """Fetch currently open (unsettled) bets for the authenticated account."""
+        return await self.call(
+            "/sports#openBets",
+            {"lang": "hu", "page": page, "nrOfRecords": page_size},
         )
 
 

@@ -3,7 +3,7 @@
 # pyright: reportUnusedFunction=false
 
 from fastapi import APIRouter, Request
-from fastapi.responses import HTMLResponse, Response
+from fastapi.responses import HTMLResponse, RedirectResponse, Response
 
 from autobet.web.context import Context, templates, whoever
 
@@ -47,5 +47,16 @@ def router(context: Context) -> APIRouter:
             "tips.html",
             {"rows": await context.store.bets.recent(50), "session": session},
         )
+
+    @api.post("/tips/sync")
+    async def sync_settlements(request: Request) -> Response:
+        session = await whoever(request, context.store)
+
+        if isinstance(session, Response):
+            return session
+
+        await context.bookmaker.settle_bets()
+
+        return RedirectResponse("/tips", status_code=303)
 
     return api

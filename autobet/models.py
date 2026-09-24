@@ -202,6 +202,8 @@ class Verdict:
     refusal: Refusal | None = None
     error: str = ""
     reference: str = ""
+    settlement: str = ""
+    returned: Decimal | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -223,6 +225,31 @@ class MessageWithTip:
     def odds(self) -> float | None:
         """What the slip pays, or None unless the tipster priced every leg."""
         return combined(self.legs)
+
+    @property
+    def settlement(self) -> str:
+        """Overall outcome of the tip across its bets ('won', 'lost', 'half_won', etc.)."""
+        placed = [v for v in self.verdicts if not v.refusal and not v.error]
+        if not placed:
+            return ""
+
+        settlements = {v.settlement for v in placed if v.settlement}
+        if "won" in settlements:
+            return "won"
+        if "half_won" in settlements:
+            return "half_won"
+        if "half_lost" in settlements:
+            return "half_lost"
+        if "cashed_out" in settlements:
+            return "cashed_out"
+        if "void" in settlements:
+            return "void"
+        if settlements == {"lost"}:
+            return "lost"
+        if "pending" in settlements:
+            return "pending"
+
+        return next(iter(settlements), "")
 
 
 @dataclass(frozen=True, slots=True)

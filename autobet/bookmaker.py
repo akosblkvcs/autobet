@@ -4,6 +4,8 @@ import asyncio
 import math
 from collections.abc import Sequence
 from dataclasses import replace
+from decimal import Decimal
+from typing import Any
 
 import structlog
 
@@ -28,6 +30,56 @@ from autobet.storage import Store
 from autobet.storage.accounts import Account
 
 log = structlog.get_logger(__name__)
+
+
+_SETTLEMENT_MAP: dict[str, str] = {
+    "WON": "won",
+    "LOST": "lost",
+    "HALF_WON": "half_won",
+    "HALF_LOST": "half_lost",
+    "VOID": "void",
+    "CANCELLED": "void",
+    "CANCELED": "void",
+    "REJECTED": "void",
+    "CASHED_OUT": "cashed_out",
+    "CASHOUT": "cashed_out",
+    "OPEN": "pending",
+    "PENDING": "pending",
+    "UNSETTLED": "pending",
+}
+
+
+def _normalize_settlement(raw_status: str) -> str | None:
+    """Map the bookmaker API's bet status to our database settlement enum."""
+    return _SETTLEMENT_MAP.get(raw_status.upper().strip())
+
+
+def _extract_settlement(details: dict[str, Any]) -> tuple[str | None, Decimal | None]:
+    """Parse settlement outcome and payout from the bookmaker's response."""
+    raw_status = str(
+        details.get("status")
+        or details.get("betStatus")
+        or details.get("state")
+        or ""
+    )
+    outcome = _normalize_settlement(raw_status)
+    if outcome is None:
+        return None, None
+
+    raw_payout = (
+        details.get("payout")
+        or details.get("winningAmount")
+        or details.get("returnAmount")
+        or details.get("returned")
+    )
+    returned = None
+    if raw_payout is not None:
+        try:
+            returned = Decimal(str(raw_payout))
+        except Exception:
+            pass
+
+    return outcome, returned
 
 
 def _priced(tip: Tip, offers: Sequence[LegOffer]) -> tuple[float, float | None]:
@@ -272,3 +324,109 @@ class Bookmaker:
             )
 
         return None
+
+    async def settle_bets(
+        self,
+        *,
+        due_only: bool = True,
+        min_age_minutes: int = 60,
+    ) -> dict[str, int]:
+        """Check status of pending bets at the bookmaker and record outcomes.
+
+        When `due_only=True` (default), only matches that kicked off at least
+        `min_age_minutes` ago (default 60m) are queried.
+        """
+        summary = {
+            "checked": 0,
+            "won": 0,
+            "lost": 0,
+            "void": 0,
+            "half_won": 0,
+            "half_lost": 0,
+            "cashed_out": 0,
+            "pending": 0,
+            "errors": 0,
+        }
+        pending_bets = await self._store.bets.pending(
+            due_only=due_only, min_age_minutes=min_age_minutes
+        )
+        if not pending_bets:
+            log.debug("no_pending_bets_to_settle", due_only=due_only)
+            return summary
+
+        try:
+            book = await self._store.books.config()
+        except Exception as error:
+            log.warning("book_not_configured_for_settlement", error=str(error))
+            return summary
+
+        accounts = await self._store.accounts.active(TIPPMIXPRO)
+        accounts_by_user = {acc.user_id: acc for acc in accounts}
+
+        grouped: dict[int, list[Any]] = {}
+        for bet in pending_bets:
+            uid = bet["user_id"]
+            if uid is not None and uid in accounts_by_user:
+                grouped.setdefault(uid, []).append(bet)
+
+        for user_id, bets in grouped.items():
+            account = accounts_by_user[user_id]
+            try:
+                ce_session = await self._minted(book, account)
+                async with connected(book) as connection:
+                    await connection.authenticate(ce_session)
+
+                    for bet in bets:
+                        summary["checked"] += 1
+                        ref = bet["reference"]
+                        try:
+                            details = await connection.bet_details(ref)
+                            outcome, returned = _extract_settlement(details)
+
+                            if outcome and outcome != "pending":
+                                if returned is None and outcome in ("won", "half_won"):
+                                    stake = Decimal(str(bet["stake"]))
+                                    odds = (
+                                        Decimal(str(bet["odds"]))
+                                        if bet["odds"]
+                                        else Decimal("1")
+                                    )
+                                    factor = (
+                                        Decimal("0.5")
+                                        if outcome == "half_won"
+                                        else Decimal("1")
+                                    )
+                                    returned = (stake * odds * factor).quantize(
+                                        Decimal("0.01")
+                                    )
+                                elif outcome in ("lost", "half_lost"):
+                                    returned = Decimal("0.00")
+
+                                await self._store.bets.settle(
+                                    bet["id"], outcome, returned
+                                )
+                                if outcome in summary:
+                                    summary[outcome] += 1
+                                else:
+                                    summary["void"] += 1
+
+                                log.info(
+                                    "bet_settled",
+                                    bet_id=bet["id"],
+                                    reference=ref,
+                                    outcome=outcome,
+                                    returned=str(returned),
+                                    user=user_id,
+                                )
+                            else:
+                                summary["pending"] += 1
+                        except Exception as error:
+                            summary["errors"] += 1
+                            log.warning(
+                                "bet_settle_failed", reference=ref, error=str(error)
+                            )
+            except Exception as error:
+                summary["errors"] += len(bets)
+                log.warning("account_settle_failed", user=user_id, error=str(error))
+
+        return summary

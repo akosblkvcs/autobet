@@ -8,6 +8,9 @@
   --line: #282c34;
   --drop: #e5707a;
   --rise: #6cc38a;
+  --orange: #e59850;
+  --blue: #5ba4e6;
+  --light-grey: #adb5bd;
   --gutter: 1rem;
 }
 
@@ -82,12 +85,48 @@ h2:first-child {
   padding: 0;
 }
 
+.tips-header {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: .75rem;
+}
+
 .tip {
   margin-top: .75rem;
   padding: .75rem;
   border: 1px solid var(--line);
   border-radius: 6px;
   background: var(--card);
+  transition: background-color 0.2s ease, border-color 0.2s ease;
+}
+
+.tip.won {
+  background: rgba(108, 195, 138, 0.18);
+  border-color: rgba(108, 195, 138, 0.45);
+}
+
+.tip.lost {
+  background: rgba(229, 112, 122, 0.18);
+  border-color: rgba(229, 112, 122, 0.45);
+}
+
+.tip.half_won,
+.tip.half_lost {
+  background: rgba(229, 152, 80, 0.18);
+  border-color: rgba(229, 152, 80, 0.45);
+}
+
+.tip.void,
+.tip.cancelled,
+.tip.canceled {
+  background: rgba(173, 181, 189, 0.12);
+  border-color: rgba(173, 181, 189, 0.35);
+}
+
+.tip.cashed_out,
+.tip.cash_out {
+  background: rgba(91, 164, 230, 0.18);
+  border-color: rgba(91, 164, 230, 0.45);
 }
 
 .tip .meta {
@@ -148,8 +187,42 @@ h2:first-child {
 }
 
 .verdict.refused,
-.verdict.failed {
+.verdict.failed,
+.verdict.lost,
+.outcome.lost {
   color: var(--drop);
+}
+
+.verdict.won,
+.outcome.won {
+  color: var(--rise);
+}
+
+.verdict.half_won,
+.verdict.half_lost,
+.outcome.half_won,
+.outcome.half_lost {
+  color: var(--orange);
+}
+
+.verdict.void,
+.verdict.cancelled,
+.verdict.canceled,
+.outcome.void,
+.outcome.cancelled,
+.outcome.canceled {
+  color: var(--light-grey);
+}
+
+.verdict.cashed_out,
+.verdict.cash_out,
+.outcome.cashed_out,
+.outcome.cash_out {
+  color: var(--blue);
+}
+
+.outcome {
+  font-weight: 600;
 }
 
 .quiet {

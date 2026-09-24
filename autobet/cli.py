@@ -11,6 +11,7 @@ import structlog
 
 from autobet import markets
 from autobet.app import run_service
+from autobet.bookmaker import Bookmaker
 from autobet.books import TIPPMIXPRO, Tippmixpro
 from autobet.config import Settings, load_settings
 from autobet.connection import connected
@@ -36,6 +37,19 @@ def build_parser() -> argparse.ArgumentParser:
     sub.add_parser("migrate")
     sub.add_parser("markets")
     sub.add_parser("index")
+
+    settle = sub.add_parser("settle")
+    settle.add_argument(
+        "--all",
+        action="store_true",
+        help="Check all pending bets, including future events",
+    )
+    settle.add_argument(
+        "--minutes",
+        type=int,
+        default=60,
+        help="Minimum minutes elapsed since kickoff (default: 60)",
+    )
 
     config = sub.add_parser("config")
     config.add_argument("key", nargs="?")
@@ -264,6 +278,26 @@ async def cmd_markets(settings: Settings) -> None:
     await store.close()
 
 
+async def cmd_settle(
+    settings: Settings, check_all: bool = False, min_age_minutes: int = 60
+) -> None:
+    """Check status of pending bets at the bookmaker and record outcomes."""
+    store = await Store.connect(settings.database_url, settings.encryption_key)
+    bookmaker = Bookmaker(settings, store)
+    summary = await bookmaker.settle_bets(
+        due_only=not check_all, min_age_minutes=min_age_minutes
+    )
+    scope = "all pending" if check_all else f"due (kickoff >= {min_age_minutes}m ago)"
+    print(
+        f"Settlement check complete ({scope}): {summary['checked']} checked, "
+        f"{summary['won']} won, {summary['lost']} lost, "
+        f"{summary['half_won']} half won, {summary['half_lost']} half lost, "
+        f"{summary['void']} void, {summary['pending']} still pending, "
+        f"{summary['errors']} errors."
+    )
+    await store.close()
+
+
 def main(argv: list[str] | None = None) -> int:
     """Parse arguments and dispatch to the selected command."""
     args = build_parser().parse_args(argv)
@@ -286,6 +320,8 @@ def main(argv: list[str] | None = None) -> int:
                 asyncio.run(cmd_markets(settings))
             case "index":
                 asyncio.run(cmd_index(settings))
+            case "settle":
+                asyncio.run(cmd_settle(settings, args.all, args.minutes))
             case "config":
                 asyncio.run(cmd_config(settings, args.key, args.value, args.reveal))
             case "book":

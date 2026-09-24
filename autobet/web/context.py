@@ -9,6 +9,7 @@ from fastapi import Request
 from fastapi.responses import RedirectResponse, Response
 from fastapi.templating import Jinja2Templates
 
+from autobet.bookmaker import Bookmaker
 from autobet.config import Settings
 from autobet.models import SignedIn, utcnow
 from autobet.pipeline import PipelineState
@@ -53,6 +54,7 @@ class Context:
     state: PipelineState
     telegram: Telegram
     provider: Provider
+    bookmaker: Bookmaker
 
     async def limits(self) -> dict[str, Any]:
         """The stored limits that decide whether a tip becomes a bet."""

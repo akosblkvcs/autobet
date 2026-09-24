@@ -37,6 +37,18 @@ def _stopping() -> asyncio.Event:
     return stop
 
 
+async def _periodically_settle(bookmaker: Bookmaker, stop: asyncio.Event) -> None:
+    """Check bet settlements periodically while the service is running."""
+    while not stop.is_set():
+        try:
+            await asyncio.wait_for(stop.wait(), timeout=300)
+        except TimeoutError:
+            try:
+                await bookmaker.settle_bets()
+            except Exception:
+                log.exception("periodic_settlement_failed")
+
+
 async def run_service(settings: Settings) -> None:
     """Run the Telegram client, the bet placer and the control plane."""
     store = await Store.connect(settings.database_url)
@@ -77,7 +89,7 @@ async def run_service(settings: Settings) -> None:
 
     server = _ManagedServer(
         uvicorn.Config(
-            build_app(settings, store, state, telegram),
+            build_app(settings, store, state, telegram, bookmaker),
             host=settings.http_host,
             port=settings.http_port,
             log_config=None,
@@ -92,6 +104,10 @@ async def run_service(settings: Settings) -> None:
         run_pipeline(telegram.messages(), store, state, bookmaker, parse),
         name="pipeline",
     )
+    settler = asyncio.create_task(
+        _periodically_settle(bookmaker, stop),
+        name="settler",
+    )
 
     def report(task: asyncio.Task[None]) -> None:
         """Report a task's failure and stop the service if it failed."""
@@ -100,7 +116,7 @@ async def run_service(settings: Settings) -> None:
 
         stop.set()
 
-    for task in (http, pipeline):
+    for task in (http, pipeline, settler):
         task.add_done_callback(report)
 
     log.info("service_started", http=f"http://{settings.http_host}:{settings.http_port}")
@@ -114,8 +130,9 @@ async def run_service(settings: Settings) -> None:
     server.should_exit = True
 
     pipeline.cancel()
+    settler.cancel()
 
-    await asyncio.gather(http, pipeline, return_exceptions=True)
+    await asyncio.gather(http, pipeline, settler, return_exceptions=True)
 
     await telegram.stop()
     await claude.close()
