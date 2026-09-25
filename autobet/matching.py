@@ -32,6 +32,7 @@ _SIDED_LINE = re.compile(r"\(([-+]?\d+(?:[.,]\d+)?)\)")
 _LINE_TOKEN = re.compile(r"[-+]?\d+(?:[.,]\d+)?")
 _NUMERIC = re.compile(r"[-+]?\d+\.?\d*")
 _TRANSLITERATED = str.maketrans({"j": "i", "y": "i", "w": "v", "k": "c"})
+_AGE = re.compile(r"\bu-?(\d{2})")
 
 
 def fold(text: str) -> str:
@@ -54,6 +55,10 @@ _SELECTION_KEYS = dict(
         strict=True,
     )
 )
+_MARKS = {
+    "reserve": frozenset(_folded("B", "II", "III", "2", "3", "reserves", "reserve")),
+    "women": frozenset(_folded("W", "women", "női", "noi")),
+}
 _DRAW_WORDS = _folded("Döntetlen", "Draw", "X")
 _OVER_WORDS = _folded("Több", "Over")
 _UNDER_WORDS = _folded("Kevesebb", "Under")
@@ -169,13 +174,27 @@ def two_sides(name: str) -> tuple[str, str] | None:
     return (parts[0], parts[1]) if len(parts) == 2 else None  # noqa: PLR2004
 
 
+def _marks(name: str) -> frozenset[str]:
+    """Which team of a club a name points at: the reserves, the women, an age group."""
+    folded = fold(name)
+    words = {word.strip("().,") for word in folded.split()}
+    marks = {mark for mark, words_of in _MARKS.items() if words & words_of}
+
+    return frozenset(marks | {f"u{age}" for age in _AGE.findall(folded)})
+
+
 def _score(query: str, aliases: Sequence[str]) -> float:
     """How well one competitor matches any name the feed has for that side."""
     folded = fold(query)
+    marks = _marks(query)
 
     return max(
         (
-            0.95 if folded == _initials(alias) else fuzz.WRatio(folded, alias) / 100
+            0.0
+            if marks != _marks(alias)
+            else 0.95
+            if folded == _initials(alias)
+            else fuzz.WRatio(folded, alias) / 100
             for alias in aliases
         ),
         default=0.0,
