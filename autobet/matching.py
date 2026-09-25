@@ -32,7 +32,7 @@ _SIDED_LINE = re.compile(r"\(([-+]?\d+(?:[.,]\d+)?)\)")
 _LINE_TOKEN = re.compile(r"[-+]?\d+(?:[.,]\d+)?")
 _NUMERIC = re.compile(r"[-+]?\d+\.?\d*")
 _TRANSLITERATED = str.maketrans({"j": "i", "y": "i", "w": "v", "k": "c"})
-_AGE = re.compile(r"\bu(\d{2})")
+_AGE = re.compile(r"\bu-?(\d{2})")
 
 
 def fold(text: str) -> str:
@@ -191,7 +191,7 @@ def _score(query: str, aliases: Sequence[str]) -> float:
     return max(
         (
             0.0
-            if marks - _marks(alias)
+            if marks != _marks(alias)
             else 0.95
             if folded == _initials(alias)
             else fuzz.WRatio(folded, alias) / 100
