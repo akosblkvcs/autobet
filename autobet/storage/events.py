@@ -120,8 +120,7 @@ class Events:
                    count(*) FILTER (WHERE starts_at > now()) AS upcoming,
                    count(*) FILTER (WHERE markets > 0)       AS priced,
                    coalesce(sum(markets), 0)                 AS markets,
-                   min(indexed_at)                           AS built,
-                   min(starts_at) FILTER (WHERE starts_at > now()) AS next_off
+                   min(indexed_at)                           AS built
             FROM events
             """
         )

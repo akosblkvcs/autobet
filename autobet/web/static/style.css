@@ -192,34 +192,9 @@ h2:first-child {
   color: var(--dim);
 }
 
-.scroll {
-  overflow-x: auto;
-}
-
-.metrics {
-  border-collapse: collapse;
-  white-space: nowrap;
-}
-
-.metrics th,
-.metrics td {
-  padding: .2rem 1rem .2rem 0;
-  text-align: right;
-}
-
-.metrics th {
-  color: var(--muted);
-  font-weight: 400;
-  border-bottom: 1px solid var(--line);
-}
-
-.metrics th:first-child,
-.metrics .stage {
-  text-align: left;
-}
-
-.metrics .stage {
-  color: var(--dim);
+.scroll + .quiet {
+  margin: .6rem 0 0;
+  font-size: .85em;
 }
 
 .tips {
