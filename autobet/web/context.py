@@ -92,19 +92,14 @@ class Context:
     async def index(self) -> dict[str, Any]:
         """What the stored event index holds and how stale it is."""
         held = await self.store.events.summary()
-        built, next_off = held["built"], held["next_off"]
+        built = held["built"]
 
         return {
             "events": held["events"],
             "upcoming": held["upcoming"],
             "sports": held["sports"],
             "tournaments": held["tournaments"],
-            "priced": f"{held['priced']} ({held['markets']} markets)",
-            "next_off": (
-                "nothing ahead"
-                if next_off is None
-                else f"in {humanize.naturaldelta(next_off - utcnow())}"
-            ),
+            "markets": f"{held['markets']} across {held['priced']} fixtures",
             "built": (
                 f"{humanize.naturaldelta(utcnow() - built)} ago" if built else "not yet"
             ),
