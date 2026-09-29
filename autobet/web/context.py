@@ -21,6 +21,7 @@ from autobet.web.auth import Provider, signed_in
 templates = Jinja2Templates(directory=str(Path(__file__).parent / "templates"))
 
 _ZONE = ZoneInfo("Europe/Budapest")
+_PAGE = 10
 
 
 @dataclass(frozen=True, slots=True)
@@ -34,6 +35,15 @@ class Flag:
 def _flag(yes: bool, when_yes: str, when_no: str) -> Flag:
     """The yes/no, and the colour each side of it carries."""
     return Flag("yes", when_yes) if yes else Flag("no", when_no)
+
+
+async def bets_page(
+    store: Store, page: int, user_id: int | None = None
+) -> dict[str, Any]:
+    """One page of tips that reached a verdict, and whether an older page follows."""
+    rows = await store.bets.recent(_PAGE + 1, user_id, offset=(page - 1) * _PAGE)
+
+    return {"rows": rows[:_PAGE], "page": page, "more": len(rows) > _PAGE}
 
 
 async def whoever(request: Request, store: Store) -> SignedIn | Response:

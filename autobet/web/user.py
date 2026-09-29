@@ -5,17 +5,18 @@
 import secrets
 from typing import Annotated
 
-from fastapi import APIRouter, Form, Request
+from fastapi import APIRouter, Form, Query, Request
 from fastapi.responses import HTMLResponse, RedirectResponse, Response
 from pydantic import ValidationError
 
 from autobet.books import TIPPMIXPRO
 from autobet.models import SignedIn
 from autobet.storage import Store
-from autobet.web.context import Context, templates, whoever
+from autobet.web.context import Context, bets_page, templates, whoever
 
 Field = Annotated[str, Form()]
 Blank = Annotated[str, Form()]
+Page = Annotated[int, Query(ge=1)]
 
 
 def _back(page: str) -> RedirectResponse:
@@ -88,7 +89,7 @@ def router(context: Context) -> APIRouter:
     store = context.store
 
     @api.get("/bets", response_class=HTMLResponse)
-    async def bets(request: Request) -> Response:
+    async def bets(request: Request, page: Page = 1) -> Response:
         session = await whoever(request, store)
 
         if isinstance(session, Response):
@@ -97,10 +98,7 @@ def router(context: Context) -> APIRouter:
         return templates.TemplateResponse(
             request,
             "bets.html",
-            {
-                "rows": await store.bets.recent(50, session.user.id),
-                "session": session,
-            },
+            {**await bets_page(store, page, session.user.id), "session": session},
         )
 
     @api.get("/settings", response_class=HTMLResponse)
