@@ -1,0 +1,9 @@
+{% macro pager(page, more) %}
+{% if page > 1 or more %}
+<nav class="pager">
+  {% if page > 1 %}<a href="?page={{ page - 1 }}">&larr; newer</a>{% endif %}
+  <span class="quiet">page {{ page }}</span>
+  {% if more %}<a href="?page={{ page + 1 }}">older &rarr;</a>{% endif %}
+</nav>
+{% endif %}
+{% endmacro %}

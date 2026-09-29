@@ -5,7 +5,7 @@
 import secrets
 from typing import Annotated
 
-from fastapi import APIRouter, Form, Request
+from fastapi import APIRouter, Form, Query, Request
 from fastapi.responses import HTMLResponse, RedirectResponse, Response
 from pydantic import BaseModel, ValidationError
 
@@ -14,10 +14,11 @@ from autobet.models import SignedIn
 from autobet.policy import SECRETS
 from autobet.storage import Store
 from autobet.storage.rows import JsonValue
-from autobet.web.context import Context, admin_only, templates
+from autobet.web.context import Context, admin_only, bets_page, templates
 
 Field = Annotated[str, Form()]
 Blank = Annotated[str, Form()]
+Page = Annotated[int, Query(ge=1)]
 
 
 def _back(tab: str) -> RedirectResponse:
@@ -183,7 +184,7 @@ def router(context: Context) -> APIRouter:
         )
 
     @api.get("/activity", response_class=HTMLResponse)
-    async def everyones(request: Request) -> Response:
+    async def everyones(request: Request, page: Page = 1) -> Response:
         guarded = await admin_only(request, store)
 
         if isinstance(guarded, Response):
@@ -192,7 +193,7 @@ def router(context: Context) -> APIRouter:
         return templates.TemplateResponse(
             request,
             "all_bets.html",
-            {"rows": await store.bets.recent(50), "session": guarded},
+            {**await bets_page(store, page), "session": guarded},
         )
 
     @api.post("/setting")

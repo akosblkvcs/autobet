@@ -235,7 +235,7 @@ class Bets:
         return selection_id
 
     async def recent(
-        self, limit: int = 50, user_id: int | None = None
+        self, limit: int = 10, user_id: int | None = None, offset: int = 0
     ) -> list[MessageWithTip]:
         """The most recent tips that reached a verdict, newest first."""
         rows = await self._pool.fetch(
@@ -249,11 +249,12 @@ class Bets:
                 SELECT 1 FROM bets b
                 WHERE b.tip_id = t.id AND ($2::bigint IS NULL OR b.user_id = $2)
             )
-            ORDER BY m.received_at DESC
-            LIMIT $1
+            ORDER BY m.received_at DESC, t.id DESC
+            LIMIT $1 OFFSET $3
             """,
             limit,
             user_id,
+            offset,
         )
         if not rows:
             return []

@@ -1,7 +1,9 @@
 {% extends "base.html" %}
 {% from "_admin.html" import tabs %}
+{% from "_pager.html" import pager %}
 
 {% block body %}
 {{ tabs("activity") }}
-{% if rows %}{% include "_tips.html" %}{% else %}<p class="quiet">No bets yet.</p>{% endif %}
+{% if rows %}{% include "_tips.html" %}{% elif page > 1 %}<p class="quiet">Nothing this far back.</p>{% else %}<p class="quiet">No bets yet.</p>{% endif %}
+{{ pager(page, more) }}
 {% endblock %}
