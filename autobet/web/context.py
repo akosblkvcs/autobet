@@ -1,8 +1,10 @@
 """What every page needs to render, shared by the routers."""
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
+from datetime import datetime, time, timedelta
 from pathlib import Path
 from typing import Any
+from zoneinfo import ZoneInfo
 
 import humanize
 from fastapi import Request
@@ -10,13 +12,15 @@ from fastapi.responses import RedirectResponse, Response
 from fastapi.templating import Jinja2Templates
 
 from autobet.config import Settings
-from autobet.models import SignedIn, utcnow
+from autobet.models import BetLeg, SignedIn, utcnow
 from autobet.pipeline import PipelineState
 from autobet.storage import Store
 from autobet.telegram import Telegram
 from autobet.web.auth import Provider, signed_in
 
 templates = Jinja2Templates(directory=str(Path(__file__).parent / "templates"))
+
+_ZONE = ZoneInfo("Europe/Budapest")
 
 
 @dataclass(frozen=True, slots=True)
@@ -88,6 +92,20 @@ class Context:
                 "max_odds_rise_percent", f"{terms.max_odds_rise_percent:g}%"
             ),
         }
+
+    async def schedule(self, user_id: int) -> dict[str, list[BetLeg]]:
+        """This person's bets by the local day their fixture kicks off."""
+        today = datetime.now(_ZONE).date()
+        since = datetime.combine(today - timedelta(days=1), time(), _ZONE)
+        days: dict[str, list[BetLeg]] = {"yesterday": [], "today": [], "upcoming": []}
+
+        for leg in await self.store.bets.standing(user_id, since):
+            local = replace(leg, starts_at=leg.starts_at.astimezone(_ZONE))
+            day = local.starts_at.date()
+            key = "yesterday" if day < today else "today" if day == today else "upcoming"
+            days[key].append(local)
+
+        return days
 
     async def index(self) -> dict[str, Any]:
         """What the stored event index holds and how stale it is."""

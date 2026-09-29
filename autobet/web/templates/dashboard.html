@@ -42,6 +42,29 @@
 </div>
 
 <div class="panels">
+  <section class="panel wide">
+    <h2>Your events</h2>
+    {% for day, legs in schedule.items() if legs %}
+    <h3>{{ day }}</h3>
+    {% for leg in legs %}
+    <div class="leg">
+      <div class="headline">
+        <span>
+          <span class="quiet">{{ leg.starts_at.strftime("%m-%d %H:%M" if day == "upcoming" else "%H:%M") }}</span>
+          <span class="event">{{ leg.event }}</span>
+        </span>
+        <span class="odds">{{ leg.odds if leg.odds else "—" }}</span>
+      </div>
+      <div class="market">
+        {{ leg.market }} &rarr; {{ leg.selection }}
+        {%- if leg.state == "paper" %} &middot; <span class="flag calm">paper</span>{% endif %}
+      </div>
+    </div>
+    {% endfor %}
+    {% else %}
+    <p class="quiet">No bets on yesterday's, today's or later fixtures.</p>
+    {% endfor %}
+  </section>
   <section class="panel">
     <h2>Telegram</h2>
     {{ stats(service) }}
