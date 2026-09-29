@@ -1,9 +1,12 @@
 """Tips, what their legs resolved to, and what each user did about them."""
 
+from datetime import datetime
+
 from asyncpg import Pool, Record
 from asyncpg.pool import PoolConnectionProxy
 
 from autobet.models import (
+    BetLeg,
     BetResult,
     BetState,
     LegResolution,
@@ -56,6 +59,36 @@ class Bets:
     def __init__(self, pool: Pool) -> None:
         """Share the store's pool."""
         self._pool = pool
+
+    async def standing(self, user_id: int, since: datetime) -> list[BetLeg]:
+        """The fixtures this person's placed and paper bets ride on, soonest first."""
+        rows = await self._pool.fetch(
+            """
+            SELECT s.starts_at, s.event_name, l.market, l.selection, bl.odds, b.state
+            FROM bets b
+              JOIN bet_legs bl ON bl.bet_id = b.id
+              JOIN tip_legs l ON l.id = bl.tip_leg_id
+              JOIN selections s ON s.id = bl.selection_id
+            WHERE b.user_id = $1
+              AND b.state IN ('placed', 'paper')
+              AND s.starts_at >= $2
+            ORDER BY s.starts_at, l.position
+            """,
+            user_id,
+            since,
+        )
+
+        return [
+            BetLeg(
+                starts_at=row["starts_at"],
+                event=row["event_name"],
+                market=row["market"],
+                selection=row["selection"],
+                odds=None if row["odds"] is None else float(row["odds"]),
+                state=BetState(row["state"]),
+            )
+            for row in rows
+        ]
 
     async def record(self, tip: Tip, placement: Placement) -> None:
         """Write the tip, its legs, what they resolved to and every bet, at once."""

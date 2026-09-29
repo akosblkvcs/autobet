@@ -107,6 +107,13 @@ h2:first-child {
   margin-top: 0;
 }
 
+.panel h3 {
+  margin: .9rem 0 0;
+  font-size: .85em;
+  font-weight: 400;
+  color: var(--muted);
+}
+
 .stats {
   display: grid;
   grid-template-columns: auto 1fr;

@@ -29,6 +29,7 @@ def router(context: Context) -> APIRouter:
                 "index": await context.index(),
                 "limits": await context.limits(session.user.id),
                 "totals": await reports.totals(session.user.id),
+                "schedule": await context.schedule(session.user.id),
                 "latency": await reports.latency(),
                 "session": session,
             },

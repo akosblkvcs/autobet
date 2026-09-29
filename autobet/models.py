@@ -223,6 +223,18 @@ class Verdict:
 
 
 @dataclass(frozen=True, slots=True)
+class BetLeg:
+    """One fixture a person's standing bet rides on, for reading only."""
+
+    starts_at: datetime
+    event: str
+    market: str
+    selection: str
+    odds: float | None
+    state: BetState
+
+
+@dataclass(frozen=True, slots=True)
 class MessageWithTip:
     """A message, its tip and what each account did about it, for reading only."""
 
