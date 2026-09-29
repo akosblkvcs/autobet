@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime
 
 from asyncpg import Pool
 
@@ -18,8 +17,6 @@ class Account:
     user_id: int
     username: str
     status: str
-    last_login_at: datetime | None
-    last_error: str
 
 
 class Accounts:
@@ -39,8 +36,7 @@ class Accounts:
             ON CONFLICT (user_id, bookmaker_id)
             DO UPDATE SET username = excluded.username,
                           secret = excluded.secret,
-                          status = 'active',
-                          last_error = ''
+                          status = 'active'
             """,
             user_id,
             slug,
@@ -72,8 +68,7 @@ class Accounts:
         """Every account at one book, whatever its status, oldest first."""
         rows = await self._pool.fetch(
             """
-            SELECT a.id, a.user_id, a.username, a.status, a.last_login_at,
-                   a.last_error
+            SELECT a.id, a.user_id, a.username, a.status
             FROM bookmaker_accounts a
             JOIN bookmakers b ON b.id = a.bookmaker_id
             WHERE b.slug = $1
@@ -88,8 +83,6 @@ class Accounts:
                 user_id=row["user_id"],
                 username=row["username"],
                 status=row["status"],
-                last_login_at=row["last_login_at"],
-                last_error=row["last_error"],
             )
             for row in rows
         ]
