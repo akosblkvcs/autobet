@@ -23,7 +23,7 @@ from autobet.storage import Store
 log = structlog.get_logger(__name__)
 
 _DISCIPLINES_TOPIC = "disciplines/NOT_LIVE/NOT_VIRTUAL/NOT_SIMULATED"
-_STAGES_TOPIC = "tournament-odds/7/1"
+_TREE_TOPIC = "tournament-with-children"
 _LANGUAGES = ("hu", "en")
 
 
@@ -55,12 +55,14 @@ class Index:
             sports = _sport_ids(await connection.dump(_DISCIPLINES_TOPIC))
             events: list[IndexedEvent] = []
             walked: list[IndexedTournament] = []
+            declared = 0
             for sport in sports:
                 tournaments = [
                     record
                     for record in await connection.dump(f"tournaments/{sport}")
                     if record["_type"] == "TOURNAMENT" and record.get("numberOfEvents")
                 ]
+                declared += sum(_upcoming(one) for one in tournaments)
                 for tournament in tournaments:
                     tournament_id = str(tournament["id"])
                     events += [
@@ -73,7 +75,7 @@ class Index:
 
         await self._store.events.replace(events, walked)
 
-        log.info("index_built", events=len(events), sports=len(sports))
+        log.info("index_built", events=len(events), sports=len(sports), declared=declared)
 
         return len(events)
 
@@ -193,26 +195,13 @@ class Index:
 
         return list(found.values())
 
-    async def _stages(self, connection: Connection, tournament: str) -> list[str]:
-        """The child tournaments a competition splits its fixtures across."""
-        records = await connection.dump(f"{tournament}/{_STAGES_TOPIC}")
-
-        return [
-            str(record["id"])
-            for record in records
-            if record["_type"] == "TOURNAMENT" and record.get("parentId") == tournament
-        ]
-
     async def _fixtures(
         self, connection: Connection, tournament: str
     ) -> list[list[dict[str, Any]]]:
-        """One tournament's fixtures, reaching into its stages when it has any."""
-        found = await self._matches(connection, tournament)
-
-        if found:
-            return found
-
-        for stage in await self._stages(connection, tournament):
-            found += await self._matches(connection, stage)
+        """Every fixture of a competition, across every tournament it splits into."""
+        found: list[list[dict[str, Any]]] = []
+        for record in await connection.dump(f"{_TREE_TOPIC}/{tournament}"):
+            if record["_type"] == "TOURNAMENT":
+                found += await self._matches(connection, str(record["id"]))
 
         return found

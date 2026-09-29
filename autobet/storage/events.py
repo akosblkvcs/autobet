@@ -119,6 +119,8 @@ class Events:
                    count(DISTINCT tournament_id)             AS tournaments,
                    count(*) FILTER (WHERE starts_at > now()) AS upcoming,
                    count(*) FILTER (WHERE markets > 0)       AS priced,
+                   (SELECT coalesce(sum(upcoming), 0)
+                      FROM tournaments)                     AS declared,
                    coalesce(sum(markets), 0)                 AS markets,
                    min(indexed_at)                           AS built
             FROM events

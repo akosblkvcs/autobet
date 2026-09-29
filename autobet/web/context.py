@@ -96,7 +96,7 @@ class Context:
 
         return {
             "events": held["events"],
-            "upcoming": held["upcoming"],
+            "upcoming": f"{held['upcoming']} of {held['declared']} declared",
             "sports": held["sports"],
             "tournaments": held["tournaments"],
             "markets": f"{held['markets']} across {held['priced']} fixtures",
