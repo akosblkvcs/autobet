@@ -20,6 +20,7 @@ Field = Annotated[str, Form()]
 Blank = Annotated[str, Form()]
 Page = Annotated[int, Query(ge=1)]
 Result = Annotated[Literal["won", "lost", "void"], Form()]
+Number = Annotated[int, Form()]
 
 
 def _back(tab: str) -> RedirectResponse:
@@ -199,18 +200,17 @@ def router(context: Context) -> APIRouter:
 
     @api.post("/settle")
     async def settle(
-        request: Request, csrf: Field, tip_id: Field, result: Result, page: Field
+        request: Request, csrf: Field, tip_id: Number, result: Result, page: Number
     ) -> Response:
         who = await _actor(request, store, csrf)
 
         if isinstance(who, Response):
             return who
 
-        tip = int(tip_id)
-        await store.bets.settle(tip, result)
+        await store.bets.settle(tip_id, result)
 
         return RedirectResponse(
-            f"/admin/activity?page={int(page)}#tip-{tip}", status_code=303
+            f"/admin/activity?page={page}#tip-{tip_id}", status_code=303
         )
 
     @api.post("/setting")
