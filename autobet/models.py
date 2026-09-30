@@ -220,6 +220,7 @@ class Verdict:
     reference: str = ""
     state: BetState = BetState.PLACED
     stake: Decimal = Decimal("0")
+    settlement: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -238,6 +239,7 @@ class BetLeg:
 class MessageWithTip:
     """A message, its tip and what each account did about it, for reading only."""
 
+    tip_id: int
     message: IncomingMessage
     legs: tuple[TipLeg, ...]
     resolutions: tuple[LegResolution | None, ...] = ()

@@ -61,7 +61,13 @@ class Reports:
                    (SELECT count(*) FROM bets
                       WHERE user_id = $1 AND state = 'refused') AS refused,
                    (SELECT count(*) FROM bets
-                      WHERE user_id = $1 AND state = 'error')   AS failed
+                      WHERE user_id = $1 AND state = 'error')   AS failed,
+                   (SELECT count(*) FROM bets
+                      WHERE user_id = $1 AND settlement = 'won')  AS won,
+                   (SELECT count(*) FROM bets
+                      WHERE user_id = $1 AND settlement = 'lost') AS lost,
+                   (SELECT count(*) FROM bets
+                      WHERE user_id = $1 AND settlement = 'void') AS void
             """,
             user_id,
         )
