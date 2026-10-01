@@ -11,7 +11,7 @@
     {% for leg, resolution in row.paired() %}
     <div class="leg">
       <div class="headline">
-        <span class="event">{{ leg.event }}</span>
+        <span class="event">{{ resolution.offer.event_name if resolution and resolution.offer else leg.event }}</span>
         <span class="odds">{{ leg.odds if leg.odds else "—" }}</span>
       </div>
       <div class="market">{{ leg.market }} &rarr; {{ leg.selection }}</div>
@@ -20,7 +20,7 @@
       <div class="unlooked">not looked up</div>
       {% elif resolution.offer %}
       <div class="offer">
-        matched {{ resolution.offer.event_name }} &middot; live {{ resolution.offer.odds }}
+        {% if leg.event != resolution.offer.event_name %}tipped as {{ leg.event }} &middot; {% endif %}live {{ resolution.offer.odds }}
         {% if resolution.offer.drop_percent is not none %}
         <span class="{{ 'drop' if resolution.offer.drop_percent > 0 else 'rise' }}">
           {{ "%+.1f" % -resolution.offer.drop_percent }}%
@@ -41,7 +41,7 @@
 
     {% for verdict in row.verdicts %}
     <div class="verdict {{ verdict.state }}">
-      {%- if loop.last and settling and row.verdicts | selectattr("state", "in", ["placed", "paper"]) | list %}
+      {%- if loop.last and settling and row.verdicts | selectattr("state", "eq", "placed") | list %}
       <form class="settle" method="post" action="/admin/settle">
         <input type="hidden" name="csrf" value="{{ session.csrf }}">
         <input type="hidden" name="tip_id" value="{{ row.tip_id }}">

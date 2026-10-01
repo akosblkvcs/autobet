@@ -94,11 +94,11 @@ class Bets:
         ]
 
     async def settle(self, tip_id: int, result: str) -> None:
-        """Mark every bet that stood on a tip with how its event ended."""
+        """Mark every bet placed on a tip with how its event ended."""
         await self._pool.execute(
             """
             UPDATE bets SET settlement = $2, settled_at = now()
-            WHERE tip_id = $1 AND state IN ('placed', 'paper')
+            WHERE tip_id = $1 AND state = 'placed'
             """,
             tip_id,
             result,
