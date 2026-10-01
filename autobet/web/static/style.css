@@ -84,6 +84,14 @@ h2:first-child {
   font-weight: 600;
 }
 
+.tally.won .figure {
+  color: var(--rise);
+}
+
+.tally.lost .figure {
+  color: var(--drop);
+}
+
 .panels {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(16rem, 1fr));
@@ -269,6 +277,7 @@ h2:first-child {
 }
 
 .verdict {
+  display: flow-root;
   margin-top: .6rem;
   padding-top: .5rem;
   border-top: 1px solid var(--line);
@@ -319,21 +328,45 @@ h2:first-child {
 }
 
 .settle {
+  float: right;
   display: flex;
-  gap: .5rem;
-  margin-top: .6rem;
+  gap: .3rem;
+  margin-left: .5rem;
 }
 
 .settle button {
-  font-size: .85em;
-  padding: .25rem .6rem;
+  font-size: .75rem;
+  line-height: 1.2;
+  padding: .1rem .45rem;
+  background: none;
   color: var(--muted);
 }
 
-.settle button.on {
-  color: var(--fg);
-  border-color: var(--muted);
+.settle .won {
+  color: var(--rise);
+  border-color: var(--rise);
+}
+
+.settle .lost {
+  color: var(--drop);
+  border-color: var(--drop);
+}
+
+.settle .on {
+  color: var(--bg);
   font-weight: 600;
+}
+
+.settle .won.on {
+  background: var(--rise);
+}
+
+.settle .lost.on {
+  background: var(--drop);
+}
+
+.settle .void.on {
+  background: var(--muted);
 }
 
 .tabs {

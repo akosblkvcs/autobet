@@ -1,5 +1,6 @@
 """What every page needs to render, shared by the routers."""
 
+import hashlib
 from dataclasses import dataclass, replace
 from datetime import datetime, time, timedelta
 from pathlib import Path
@@ -18,7 +19,19 @@ from autobet.storage import Store
 from autobet.telegram import Telegram
 from autobet.web.auth import Provider, signed_in
 
-templates = Jinja2Templates(directory=str(Path(__file__).parent / "templates"))
+_STYLE_VERSION = hashlib.sha256(
+    (Path(__file__).parent / "static" / "style.css").read_bytes()
+).hexdigest()[:12]
+
+
+def _style(request: Request) -> dict[str, str]:
+    """The stylesheet's version, so its URL changes whenever its content does."""
+    return {"style_version": _STYLE_VERSION}
+
+
+templates = Jinja2Templates(
+    directory=str(Path(__file__).parent / "templates"), context_processors=[_style]
+)
 
 _ZONE = ZoneInfo("Europe/Budapest")
 _PAGE = 10
