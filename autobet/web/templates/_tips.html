@@ -41,6 +41,16 @@
 
     {% for verdict in row.verdicts %}
     <div class="verdict {{ verdict.state }}">
+      {%- if loop.last and settling and row.verdicts | selectattr("state", "in", ["placed", "paper"]) | list %}
+      <form class="settle" method="post" action="/admin/settle">
+        <input type="hidden" name="csrf" value="{{ session.csrf }}">
+        <input type="hidden" name="tip_id" value="{{ row.tip_id }}">
+        <input type="hidden" name="page" value="{{ page }}">
+        {% for choice in ["won", "lost", "void"] %}
+        <button type="submit" name="result" value="{{ choice }}" class="{{ choice }}{{ " on" if choice == result }}">{{ choice }}</button>
+        {% endfor %}
+      </form>
+      {%- endif %}
       {%- if verdict.who and row.verdicts | length > 1 %}{{ verdict.who }} &middot; {% endif %}
       {%- if verdict.state == "paper" %}<span class="tag">paper</span>
         &middot; {{ verdict.refusal.detail }}
@@ -53,17 +63,6 @@
       {%- if verdict.settlement in ["won", "lost", "void"] %} &middot; <span class="result">{{ verdict.settlement }}</span>{% endif %}
     </div>
     {% endfor %}
-
-    {% if settling and row.verdicts | selectattr("state", "in", ["placed", "paper"]) | list %}
-    <form class="settle" method="post" action="/admin/settle">
-      <input type="hidden" name="csrf" value="{{ session.csrf }}">
-      <input type="hidden" name="tip_id" value="{{ row.tip_id }}">
-      <input type="hidden" name="page" value="{{ page }}">
-      {% for choice in ["won", "lost", "void"] %}
-      <button type="submit" name="result" value="{{ choice }}" class="{{ "on" if choice == result }}">{{ choice | capitalize }}</button>
-      {% endfor %}
-    </form>
-    {% endif %}
   </li>
   {% endfor %}
 </ul>

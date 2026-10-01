@@ -26,7 +26,7 @@
 {% endmacro %}
 
 {% macro tally(name, value) %}
-<div class="tally">
+<div class="tally {{ name }}">
   <span class="figure">{{ value }}</span>
   <span class="quiet">{{ name.replace("_", " ") }}</span>
 </div>
@@ -39,6 +39,9 @@
   {{ tally("paper", totals.paper) }}
   {{ tally("refused", totals.refused) }}
   {{ tally("failed", totals.failed) }}
+</div>
+
+<div class="counts">
   {{ tally("won", totals.won) }}
   {{ tally("lost", totals.lost) }}
   {{ tally("void", totals.void) }}
