@@ -34,6 +34,7 @@ def _to_verdict(row: Record) -> Verdict:
         reference=row["reference"],
         state=BetState(row["state"]),
         stake=row["stake"],
+        settlement=row["settlement"],
     )
 
 
@@ -89,6 +90,17 @@ class Bets:
             )
             for row in rows
         ]
+
+    async def settle(self, tip_id: int, result: str) -> None:
+        """Mark every bet that stood on a tip with how its event ended."""
+        await self._pool.execute(
+            """
+            UPDATE bets SET settlement = $2, settled_at = now()
+            WHERE tip_id = $1 AND state IN ('placed', 'paper')
+            """,
+            tip_id,
+            result,
+        )
 
     async def record(self, tip: Tip, placement: Placement) -> None:
         """Write the tip, its legs, what they resolved to and every bet, at once."""
@@ -277,6 +289,7 @@ class Bets:
         bet_rows = await self._pool.fetch(
             """
             SELECT b.tip_id, b.state, b.refusal_code, b.refusal_detail, b.stake,
+                   b.settlement,
                    coalesce(b.reference, '') AS reference,
                    coalesce(u.name, '') AS name, coalesce(u.email, '') AS email,
                    coalesce(u.subject, '') AS subject
@@ -302,6 +315,7 @@ class Bets:
             )
             found.append(
                 MessageWithTip(
+                    tip_id=row["tip_id"],
                     message=to_message(row),
                     legs=legs,
                     resolutions=resolutions,

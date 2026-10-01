@@ -3,7 +3,7 @@
 # pyright: reportUnusedFunction=false
 
 import secrets
-from typing import Annotated
+from typing import Annotated, Literal
 
 from fastapi import APIRouter, Form, Query, Request
 from fastapi.responses import HTMLResponse, RedirectResponse, Response
@@ -19,6 +19,9 @@ from autobet.web.context import Context, admin_only, bets_page, templates
 Field = Annotated[str, Form()]
 Blank = Annotated[str, Form()]
 Page = Annotated[int, Query(ge=1)]
+Result = Annotated[Literal["won", "lost", "void"], Form()]
+Number = Annotated[int, Form()]
+PageNumber = Annotated[int, Form(ge=1)]
 
 
 def _back(tab: str) -> RedirectResponse:
@@ -193,7 +196,22 @@ def router(context: Context) -> APIRouter:
         return templates.TemplateResponse(
             request,
             "all_bets.html",
-            {**await bets_page(store, page), "session": guarded},
+            {**await bets_page(store, page), "settling": True, "session": guarded},
+        )
+
+    @api.post("/settle")
+    async def settle(
+        request: Request, csrf: Field, tip_id: Number, result: Result, page: PageNumber
+    ) -> Response:
+        who = await _actor(request, store, csrf)
+
+        if isinstance(who, Response):
+            return who
+
+        await store.bets.settle(tip_id, result)
+
+        return RedirectResponse(
+            f"/admin/activity?page={page}#tip-{tip_id}", status_code=303
         )
 
     @api.post("/setting")

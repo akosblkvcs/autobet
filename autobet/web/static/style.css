@@ -293,6 +293,49 @@ h2:first-child {
   color: var(--calm);
 }
 
+.tip.won {
+  border-left: 3px solid var(--rise);
+}
+
+.tip.lost {
+  border-left: 3px solid var(--drop);
+}
+
+.tip.void {
+  border-left: 3px solid var(--muted);
+}
+
+.tip.won .result {
+  color: var(--rise);
+}
+
+.tip.lost .result {
+  color: var(--drop);
+}
+
+.result {
+  font-weight: 600;
+  color: var(--muted);
+}
+
+.settle {
+  display: flex;
+  gap: .5rem;
+  margin-top: .6rem;
+}
+
+.settle button {
+  font-size: .85em;
+  padding: .25rem .6rem;
+  color: var(--muted);
+}
+
+.settle button.on {
+  color: var(--fg);
+  border-color: var(--muted);
+  font-weight: 600;
+}
+
 .tabs {
   display: flex;
   flex-wrap: wrap;

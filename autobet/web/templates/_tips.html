@@ -1,6 +1,7 @@
 <ul class="tips">
   {% for row in rows %}
-  <li class="tip">
+  {% set result = row.verdicts | map(attribute="settlement") | select("in", ["won", "lost", "void"]) | first %}
+  <li class="tip {{ result or "" }}" id="tip-{{ row.tip_id }}">
     <div class="meta">
       <span>{{ row.message.received_at.strftime("%m-%d %H:%M:%S") }}</span>
       <span>{{ row.message.transport_latency_ms }}&nbsp;ms</span>
@@ -49,8 +50,20 @@
         {%- if verdict.refusal.detail %} &middot; {{ verdict.refusal.detail }}{% endif %}
       {%- elif verdict.error %}<span class="tag">failed</span> &middot; {{ verdict.error }}
       {%- else %}<span class="tag">placed</span> &middot; {{ verdict.reference }}{% endif %}
+      {%- if verdict.settlement in ["won", "lost", "void"] %} &middot; <span class="result">{{ verdict.settlement }}</span>{% endif %}
     </div>
     {% endfor %}
+
+    {% if settling and row.verdicts | selectattr("state", "in", ["placed", "paper"]) | list %}
+    <form class="settle" method="post" action="/admin/settle">
+      <input type="hidden" name="csrf" value="{{ session.csrf }}">
+      <input type="hidden" name="tip_id" value="{{ row.tip_id }}">
+      <input type="hidden" name="page" value="{{ page }}">
+      {% for choice in ["won", "lost", "void"] %}
+      <button type="submit" name="result" value="{{ choice }}" class="{{ "on" if choice == result }}">{{ choice | capitalize }}</button>
+      {% endfor %}
+    </form>
+    {% endif %}
   </li>
   {% endfor %}
 </ul>
