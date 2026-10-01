@@ -125,7 +125,7 @@ class Index:
     async def _rewalk(
         self, connection: Connection, events: list[IndexedEvent], sport: str
     ) -> list[IndexedEvent] | None:
-        """Re-read the tournaments of one sport that have grown since the walk."""
+        """Re-read the tournaments of one sport the board now disagrees with."""
         wanted = await self._ids_for(connection, sport)
 
         if not wanted:

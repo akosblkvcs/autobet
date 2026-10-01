@@ -83,8 +83,14 @@ class Events:
         ]
 
     async def upcoming(self) -> dict[str, int]:
-        """What each tournament declared when it was walked."""
-        rows = await self._pool.fetch("SELECT id, upcoming FROM tournaments")
+        """How many fixtures each tournament holds that have not kicked off yet."""
+        rows = await self._pool.fetch(
+            """
+            SELECT t.id, count(e.id) FILTER (WHERE e.starts_at > now()) AS upcoming
+            FROM tournaments t LEFT JOIN events e ON e.tournament_id = t.id
+            GROUP BY t.id
+            """
+        )
 
         return {row["id"]: row["upcoming"] for row in rows}
 
