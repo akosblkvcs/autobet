@@ -60,7 +60,7 @@
         {%- if verdict.refusal.detail %} &middot; {{ verdict.refusal.detail }}{% endif %}
       {%- elif verdict.error %}<span class="tag">failed</span> &middot; {{ verdict.error }}
       {%- else %}<span class="tag">placed</span> &middot; {{ verdict.reference }}{% endif %}
-      {%- if verdict.settlement in ["won", "lost", "void"] %} &middot; <span class="result">{{ verdict.settlement }}</span>{% endif %}
+      {%- if verdict.settlement in ["won", "lost", "void"] %} &middot; <span class="result {{ verdict.settlement }}">{{ verdict.settlement }}</span>{% endif %}
     </div>
     {% endfor %}
   </li>

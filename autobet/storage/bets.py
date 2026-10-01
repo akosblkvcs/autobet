@@ -65,7 +65,8 @@ class Bets:
         """The fixtures this person's placed and paper bets ride on, soonest first."""
         rows = await self._pool.fetch(
             """
-            SELECT s.starts_at, s.event_name, l.market, l.selection, bl.odds, b.state
+            SELECT s.starts_at, s.event_name, l.market, l.selection, bl.odds, b.state,
+                   b.settlement
             FROM bets b
               JOIN bet_legs bl ON bl.bet_id = b.id
               JOIN tip_legs l ON l.id = bl.tip_leg_id
@@ -87,6 +88,7 @@ class Bets:
                 selection=row["selection"],
                 odds=None if row["odds"] is None else float(row["odds"]),
                 state=BetState(row["state"]),
+                settlement=row["settlement"],
             )
             for row in rows
         ]

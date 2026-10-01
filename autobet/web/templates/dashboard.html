@@ -64,6 +64,7 @@
       <div class="market">
         {{ leg.market }} &rarr; {{ leg.selection }}
         {%- if leg.state == "paper" %} &middot; <span class="flag calm">paper</span>{% endif %}
+        {%- if leg.settlement in ["won", "lost", "void"] %} &middot; <span class="result {{ leg.settlement }}">{{ leg.settlement }}</span>{% endif %}
       </div>
     </div>
     {% endfor %}

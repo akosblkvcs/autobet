@@ -233,6 +233,7 @@ class BetLeg:
     selection: str
     odds: float | None
     state: BetState
+    settlement: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
