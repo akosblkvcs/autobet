@@ -21,6 +21,7 @@ Blank = Annotated[str, Form()]
 Page = Annotated[int, Query(ge=1)]
 Result = Annotated[Literal["won", "lost", "void"], Form()]
 Number = Annotated[int, Form()]
+PageNumber = Annotated[int, Form(ge=1)]
 
 
 def _back(tab: str) -> RedirectResponse:
@@ -200,7 +201,7 @@ def router(context: Context) -> APIRouter:
 
     @api.post("/settle")
     async def settle(
-        request: Request, csrf: Field, tip_id: Number, result: Result, page: Number
+        request: Request, csrf: Field, tip_id: Number, result: Result, page: PageNumber
     ) -> Response:
         who = await _actor(request, store, csrf)
 
