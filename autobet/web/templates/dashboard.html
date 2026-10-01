@@ -25,9 +25,9 @@
 </dl>
 {% endmacro %}
 
-{% macro tally(name, value) %}
-<div class="tally {{ name }}">
-  <span class="figure">{{ value }}</span>
+{% macro tally(name, value, tone="") %}
+<div class="tally">
+  <span class="figure {{ tone }}">{{ value }}</span>
   <span class="quiet">{{ name.replace("_", " ") }}</span>
 </div>
 {% endmacro %}
@@ -42,8 +42,8 @@
 </div>
 
 <div class="counts">
-  {{ tally("won", totals.won) }}
-  {{ tally("lost", totals.lost) }}
+  {{ tally("won", totals.won, "rise") }}
+  {{ tally("lost", totals.lost, "drop") }}
   {{ tally("void", totals.void) }}
 </div>
 

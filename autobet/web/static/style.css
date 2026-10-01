@@ -84,14 +84,6 @@ h2:first-child {
   font-weight: 600;
 }
 
-.tally.won .figure {
-  color: var(--rise);
-}
-
-.tally.lost .figure {
-  color: var(--drop);
-}
-
 .panels {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(16rem, 1fr));
