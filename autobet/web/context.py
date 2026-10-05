@@ -64,14 +64,7 @@ async def bets_page(
 
 
 async def _signed_in(request: Request, context: Context) -> SignedIn | Response | None:
-    """Whoever holds this cookie, or what to send instead -- a sign-in or a bypass.
-
-    With `auth_required` off, a request without a cookie is signed in as the
-    development admin: the row and the session are real, so the cookie it sets
-    carries a stored CSRF token and every guard downstream behaves as it does
-    against the provider. `config._closed` refuses that setting outside
-    development, which is what keeps it out of production.
-    """
+    """Whoever holds this cookie, or what to send instead -- a sign-in or a bypass."""
     session = await signed_in(request, context.store)
     bypass = session is not None and session.user.subject == DEVELOPMENT_SUBJECT
 

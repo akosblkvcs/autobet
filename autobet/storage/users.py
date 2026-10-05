@@ -13,8 +13,8 @@ from autobet.storage.rows import JsonValue
 
 SESSION_DAYS = 30
 DEVELOPMENT_SUBJECT = "autobet:development-admin"
-_DEVELOPMENT_NAME = "John"
-_DEVELOPMENT_EMAIL = "john@example.com"
+_DEVELOPMENT_NAME = "Admin"
+_DEVELOPMENT_EMAIL = "admin@oken.cc"
 
 
 def _hashed(token: str) -> str:
