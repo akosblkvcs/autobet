@@ -39,37 +39,38 @@ def _stopping() -> asyncio.Event:
 
 async def run_service(settings: Settings) -> None:
     """Run the Telegram client, the bet placer and the control plane."""
-    store = await Store.connect(settings.database_url, settings.encryption_key)
+    development = settings.environment == "development"
+    store = await Store.connect(
+        settings.database_url, settings.encryption_key, create_missing=development
+    )
     integrations = await store.config.integrations()
     missing = [
         name for name in Integrations.model_fields if not getattr(integrations, name)
     ]
 
+    if not settings.auth_required:
+        admin = await store.users.development_admin(settings.dev_admin_email)
+        log.warning("auth_disabled", acting_as=admin.email)
+
     if missing:
-        log.error(
+        log.warning(
             "integrations_missing",
             keys=missing,
-            fix="python -m autobet config <key> <value>",
+            fix=f"set them at http://{settings.http_host}:{settings.http_port}"
+            "/admin/settings, then restart",
         )
 
-        raise SystemExit(1)
-
     state = PipelineState()
-    telegram = Telegram(settings, integrations, store)
-    bookmaker = Bookmaker(store)
-    claude = build_claude(integrations.claude_api_key)
-    parse = partial(
-        parse_tip,
-        claude=claude,
-        vocabulary=build_vocabulary(settings),
-    )
+    telegram = None if missing else Telegram(settings, integrations, store)
+    claude = None if missing else build_claude(integrations.claude_api_key)
 
-    await telegram.start()
+    if telegram is not None:
+        await telegram.start()
 
-    for chat_id, title in telegram.watched.items():
-        await store.archive.register_channel(chat_id, title)
+        for chat_id, title in telegram.watched.items():
+            await store.archive.register_channel(chat_id, title)
 
-    log.info("service_configured", channels=telegram.channels)
+        log.info("service_configured", channels=telegram.channels)
 
     server = _ManagedServer(
         uvicorn.Config(
@@ -84,10 +85,16 @@ async def run_service(settings: Settings) -> None:
     stop = _stopping()
 
     http = asyncio.create_task(server.serve(), name="http")
-    pipeline = asyncio.create_task(
-        run_pipeline(telegram.messages(), store, state, bookmaker, parse),
-        name="pipeline",
-    )
+    running = [http]
+
+    if telegram is not None and claude is not None:
+        parse = partial(parse_tip, claude=claude, vocabulary=build_vocabulary(settings))
+        running.append(
+            asyncio.create_task(
+                run_pipeline(telegram.messages(), store, state, Bookmaker(store), parse),
+                name="pipeline",
+            )
+        )
 
     def report(task: asyncio.Task[None]) -> None:
         """Report a task's failure and stop the service if it failed."""
@@ -96,7 +103,7 @@ async def run_service(settings: Settings) -> None:
 
         stop.set()
 
-    for task in (http, pipeline):
+    for task in running:
         task.add_done_callback(report)
 
     log.info("service_started", http=f"http://{settings.http_host}:{settings.http_port}")
@@ -109,12 +116,17 @@ async def run_service(settings: Settings) -> None:
     # The server is asked to stop, and finishes the requests it already has.
     server.should_exit = True
 
-    pipeline.cancel()
+    for task in running[1:]:
+        task.cancel()
 
-    await asyncio.gather(http, pipeline, return_exceptions=True)
+    await asyncio.gather(*running, return_exceptions=True)
 
-    await telegram.stop()
-    await claude.close()
+    if telegram is not None:
+        await telegram.stop()
+
+    if claude is not None:
+        await claude.close()
+
     await store.close()
 
     log.info("service_stopped", processed=state.processed)

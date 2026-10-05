@@ -12,6 +12,7 @@ from autobet.policy import UserPolicy
 from autobet.storage.rows import JsonValue
 
 SESSION_DAYS = 30
+DEVELOPMENT_SUBJECT = "autobet:development-admin"
 
 
 def _hashed(token: str) -> str:
@@ -85,6 +86,25 @@ class Users:
             assert created is not None
 
             return _to_user(created)
+
+    async def development_admin(self, email: str) -> User:
+        """The admin the development sign-in acts as, created on first use."""
+        row = await self._pool.fetchrow(
+            """
+            INSERT INTO users (subject, email, name, role, last_login_at)
+            VALUES ($1, $2, 'Development admin', 'admin', now())
+            ON CONFLICT (subject) DO UPDATE SET email = EXCLUDED.email,
+                                                role = 'admin',
+                                                status = 'active',
+                                                last_login_at = now()
+            RETURNING id, subject, email, name, role
+            """,
+            DEVELOPMENT_SUBJECT,
+            email,
+        )
+        assert row is not None
+
+        return _to_user(row)
 
     async def all(self) -> list[Person]:
         """Everyone who has ever signed in, newest first."""

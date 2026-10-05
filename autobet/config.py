@@ -34,6 +34,15 @@ class Settings(BaseSettings):
 
         return value
 
+    @field_validator("auth_required")
+    @classmethod
+    def _closed(cls, value: bool, info: ValidationInfo) -> bool:
+        """A sign-in that production can waive is not a sign-in."""
+        if not value and info.data.get("environment") != "development":
+            raise ValueError("AUTH_REQUIRED=False is only allowed in development")
+
+        return value
+
     @field_validator("oidc_issuer")
     @classmethod
     def _trusted(cls, value: str, info: ValidationInfo) -> str:
@@ -56,11 +65,19 @@ class Settings(BaseSettings):
     http_host: str = "127.0.0.1"
     http_port: int = 8000
 
+    auth_required: bool = True
+    """Whether a page needs a sign-in. Development only; `_closed` enforces that."""
+
     oidc_issuer: str = ""
     oidc_client_id: str = ""
     oidc_client_secret: SecretStr = SecretStr("")
     oidc_redirect_url: str = ""
     admin_emails: Emails = ()
+
+    @property
+    def dev_admin_email(self) -> str:
+        """Who the development sign-in acts as when `auth_required` is off."""
+        return self.admin_emails[0] if self.admin_emails else "dev@localhost"
 
     @property
     def telegram_session(self) -> Path:

@@ -2,6 +2,10 @@
 
 from __future__ import annotations
 
+import re
+
+import asyncpg
+import structlog
 from asyncpg import Pool, create_pool
 
 from autobet.storage.accounts import Accounts
@@ -13,6 +17,26 @@ from autobet.storage.events import Events
 from autobet.storage.migrate import apply_migrations
 from autobet.storage.reports import Reports
 from autobet.storage.users import Users
+
+log = structlog.get_logger(__name__)
+
+_NAME = re.compile(r"^[A-Za-z_][A-Za-z0-9_]{0,62}$")
+
+
+async def _create(dsn: str) -> None:
+    """Create the database the DSN names, from the server's own `postgres` one."""
+    head, _, name = dsn.rpartition("/")
+
+    if not _NAME.match(name):
+        raise ValueError(f"refusing to create a database named {name!r}")
+
+    conn = await asyncpg.connect(f"{head}/postgres")
+    try:
+        await conn.execute(f'CREATE DATABASE "{name}"')
+    finally:
+        await conn.close()
+
+    log.info("database_created", name=name)
 
 
 class Store:
@@ -31,14 +55,27 @@ class Store:
         self.users = Users(pool)
 
     @classmethod
-    async def connect(cls, dsn: str, key: str) -> Store:
+    async def connect(cls, dsn: str, key: str, *, create_missing: bool = False) -> Store:
         """Open the pool and bring the schema up to date."""
-        pool = await create_pool(
-            dsn, min_size=1, max_size=5, max_inactive_connection_lifetime=300
-        )
+        try:
+            pool = await cls._opened(dsn)
+        except asyncpg.InvalidCatalogNameError:
+            if not create_missing:
+                raise
+
+            await _create(dsn)
+            pool = await cls._opened(dsn)
+
         await apply_migrations(pool)
 
         return cls(pool, key)
+
+    @staticmethod
+    async def _opened(dsn: str) -> Pool:
+        """The pool every repository shares."""
+        return await create_pool(
+            dsn, min_size=1, max_size=5, max_inactive_connection_lifetime=300
+        )
 
     async def close(self) -> None:
         """Close the pool, and with it every repository."""

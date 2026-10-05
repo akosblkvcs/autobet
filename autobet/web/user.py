@@ -11,7 +11,6 @@ from pydantic import ValidationError
 
 from autobet.books import TIPPMIXPRO
 from autobet.models import SignedIn
-from autobet.storage import Store
 from autobet.web.context import Context, bets_page, templates, whoever
 
 Field = Annotated[str, Form()]
@@ -32,9 +31,9 @@ def _reason(refused: Exception) -> str:
     return str(refused)
 
 
-async def _owner(request: Request, store: Store, csrf: str) -> SignedIn | Response:
+async def _owner(request: Request, context: Context, csrf: str) -> SignedIn | Response:
     """The person making this change, or the response to send instead."""
-    session = await whoever(request, store)
+    session = await whoever(request, context)
 
     if isinstance(session, Response):
         return session
@@ -90,7 +89,7 @@ def router(context: Context) -> APIRouter:
 
     @api.get("/bets", response_class=HTMLResponse)
     async def bets(request: Request, page: Page = 1) -> Response:
-        session = await whoever(request, store)
+        session = await whoever(request, context)
 
         if isinstance(session, Response):
             return session
@@ -103,7 +102,7 @@ def router(context: Context) -> APIRouter:
 
     @api.get("/settings", response_class=HTMLResponse)
     async def settings(request: Request) -> Response:
-        session = await whoever(request, store)
+        session = await whoever(request, context)
 
         return (
             session
@@ -115,7 +114,7 @@ def router(context: Context) -> APIRouter:
     async def set_term(
         request: Request, csrf: Field, key: Field, value: Blank = ""
     ) -> Response:
-        who = await _owner(request, store, csrf)
+        who = await _owner(request, context, csrf)
 
         if isinstance(who, Response):
             return who
@@ -129,7 +128,7 @@ def router(context: Context) -> APIRouter:
 
     @api.get("/account", response_class=HTMLResponse)
     async def account(request: Request) -> Response:
-        session = await whoever(request, store)
+        session = await whoever(request, context)
 
         return (
             session
@@ -141,7 +140,7 @@ def router(context: Context) -> APIRouter:
     async def save_account(
         request: Request, csrf: Field, username: Blank = "", password: Blank = ""
     ) -> Response:
-        who = await _owner(request, store, csrf)
+        who = await _owner(request, context, csrf)
 
         if isinstance(who, Response):
             return who
@@ -157,7 +156,7 @@ def router(context: Context) -> APIRouter:
 
     @api.post("/account/forget")
     async def forget_account(request: Request, csrf: Field) -> Response:
-        who = await _owner(request, store, csrf)
+        who = await _owner(request, context, csrf)
 
         if isinstance(who, Response):
             return who

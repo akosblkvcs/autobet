@@ -14,7 +14,7 @@ def router(context: Context) -> APIRouter:
 
     @api.get("/", response_class=HTMLResponse)
     async def index(request: Request) -> Response:
-        session = await whoever(request, context.store)
+        session = await whoever(request, context)
 
         if isinstance(session, Response):
             return session

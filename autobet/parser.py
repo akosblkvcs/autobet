@@ -6,7 +6,7 @@ from typing import Literal
 
 import structlog
 from anthropic import AsyncAnthropic
-from anthropic.types import ContentBlockParam
+from anthropic.types import ContentBlockParam, TextBlockParam, Usage
 from pydantic import BaseModel
 
 from autobet import markets
@@ -15,7 +15,7 @@ from autobet.models import IncomingMessage, Tip, TipLeg, combined, utcnow
 
 log = structlog.get_logger(__name__)
 
-_VISION_MODEL = "claude-opus-5"
+_VISION_MODEL = "claude-opus-5-5"
 
 _SLIP_PROMPT = """This image was posted by a sports betting tipster. Decide
 what it is, then read it.
@@ -33,10 +33,10 @@ kind:
 Only "to_place" is a bet we can make; return one leg per selection, in the
 order shown.
 
-- sport: as the bet-type list below names it, else in Hungarian.
+- sport: as the bet-type list names it, else in Hungarian.
 - event: the two teams or competitors, as printed.
-- market: the bookmaker's name for this bet, taken from the list below when
-  anything there is the same bet — wording and period included, since each
+- market: the bookmaker's name for this bet, taken from the bet-type list
+  when anything there is the same bet — wording and period included, since each
   sport names its periods its own way. When nothing there is this bet, keep the
   slip's own words rather than inventing a name. Keep any line it prints, with
   its sign.
@@ -57,10 +57,10 @@ kind:
 
 Only "to_place" is a bet we can make; return one leg per selection.
 
-- sport: as the bet-type list below names it, else in Hungarian.
+- sport: as the bet-type list names it, else in Hungarian.
 - event: the two teams or competitors, as written.
-- market: the bookmaker's name for this bet, taken from the list below when
-  anything there is the same bet — wording and period included, since each
+- market: the bookmaker's name for this bet, taken from the bet-type list
+  when anything there is the same bet — wording and period included, since each
   sport names its periods its own way. When nothing there is this bet, keep the
   tipster's own words rather than inventing a name. Keep any line they quoted,
   with its sign.
@@ -99,7 +99,31 @@ def build_vocabulary(settings: Settings) -> str:
     return markets.as_prompt(markets.load(settings.market_families))
 
 
-def _content(message: IncomingMessage, vocabulary: str) -> list[ContentBlockParam] | None:
+def _spend(usage: Usage) -> dict[str, int]:
+    """How this call was billed, so the caching can be seen rather than assumed."""
+    return {
+        "cached": usage.cache_read_input_tokens or 0,
+        "cache_written": usage.cache_creation_input_tokens or 0,
+        "uncached": usage.input_tokens,
+        "answered": usage.output_tokens,
+    }
+
+
+def _system(vocabulary: str) -> list[TextBlockParam]:
+    """The bet-type list, cached because every tip sends the same bytes of it."""
+    if not vocabulary:
+        return []
+
+    return [
+        {
+            "type": "text",
+            "text": vocabulary,
+            "cache_control": {"type": "ephemeral", "ttl": "1h"},
+        }
+    ]
+
+
+def _content(message: IncomingMessage) -> list[ContentBlockParam] | None:
     """What to send the model for this message, or None if there is nothing."""
     if message.media_path is not None:
         image = base64.standard_b64encode(Path(message.media_path).read_bytes()).decode()
@@ -113,15 +137,12 @@ def _content(message: IncomingMessage, vocabulary: str) -> list[ContentBlockPara
                     "data": image,
                 },
             },
-            {"type": "text", "text": _SLIP_PROMPT + vocabulary},
+            {"type": "text", "text": _SLIP_PROMPT},
         ]
 
     if message.text.strip():
         return [
-            {
-                "type": "text",
-                "text": _TEXT_PROMPT + vocabulary + "\n\nThe message:\n" + message.text,
-            }
+            {"type": "text", "text": _TEXT_PROMPT + "\n\nThe message:\n" + message.text}
         ]
 
     return None
@@ -143,7 +164,7 @@ async def parse_tip(
     Returns:
         The tip the message describes, or None for anything that is not one.
     """
-    content = _content(message, vocabulary)
+    content = _content(message)
 
     if content is None:
         return None
@@ -153,11 +174,13 @@ async def parse_tip(
         max_tokens=16000,
         thinking={"type": "adaptive"},
         output_config={"effort": "low"},
+        system=_system(vocabulary),
         messages=[{"role": "user", "content": content}],
         output_format=_Slip,
     )
     slip = response.parsed_output
     vision_ms = int((utcnow() - started).total_seconds() * 1000)
+    spend = _spend(response.usage)
 
     if slip is None or slip.kind != "to_place" or not slip.legs:
         log.info(
@@ -165,6 +188,7 @@ async def parse_tip(
             external_id=message.external_id,
             kind=slip.kind if slip else None,
             vision_ms=vision_ms,
+            **spend,
         )
 
         return None
@@ -186,6 +210,7 @@ async def parse_tip(
         legs=len(legs),
         priced=sum(leg.odds is not None for leg in legs),
         vision_ms=vision_ms,
+        **spend,
     )
 
     return Tip(
