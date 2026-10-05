@@ -49,7 +49,7 @@ async def run_service(settings: Settings) -> None:
     ]
 
     if not settings.auth_required:
-        admin = await store.users.development_admin(settings.dev_admin_email)
+        admin = await store.users.development_admin()
         log.warning("auth_disabled", acting_as=admin.email)
 
     if missing:

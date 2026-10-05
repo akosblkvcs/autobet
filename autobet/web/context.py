@@ -88,7 +88,7 @@ async def _signed_in(request: Request, context: Context) -> SignedIn | Response 
         return session
 
     users = context.store.users
-    admin = await users.development_admin(context.settings.dev_admin_email)
+    admin = await users.development_admin()
     answer = RedirectResponse(request.url.path, status_code=303)
     keep_session(answer, await users.open_session(admin), context.settings)
 

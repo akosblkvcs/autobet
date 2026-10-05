@@ -97,11 +97,6 @@ class Settings(BaseSettings):
     admin_emails: Emails = ()
 
     @property
-    def dev_admin_email(self) -> str:
-        """Who the development sign-in acts as when `auth_required` is off."""
-        return self.admin_emails[0] if self.admin_emails else "dev@localhost"
-
-    @property
     def telegram_session(self) -> Path:
         """Telethon's SQLite session."""
         return self.data_dir / "telethon.session"
