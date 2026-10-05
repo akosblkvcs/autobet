@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import re
+from urllib.parse import urlsplit, urlunsplit
 
 import asyncpg
 import structlog
@@ -25,12 +26,13 @@ _NAME = re.compile(r"^[A-Za-z_][A-Za-z0-9_]{0,62}$")
 
 async def _create(dsn: str) -> None:
     """Create the database the DSN names, from the server's own `postgres` one."""
-    head, _, name = dsn.rpartition("/")
+    parts = urlsplit(dsn)
+    name = parts.path.lstrip("/")
 
     if not _NAME.match(name):
         raise ValueError(f"refusing to create a database named {name!r}")
 
-    conn = await asyncpg.connect(f"{head}/postgres")
+    conn = await asyncpg.connect(urlunsplit(parts._replace(path="/postgres")))
     try:
         await conn.execute(f'CREATE DATABASE "{name}"')
     finally:

@@ -63,6 +63,14 @@ async def run_service(settings: Settings) -> None:
     state = PipelineState()
     telegram = None if missing else Telegram(settings, integrations, store)
     claude = None if missing else build_claude(integrations.claude_api_key)
+    vocabulary = build_vocabulary(settings)
+
+    if telegram is not None and not vocabulary:
+        log.warning(
+            "vocabulary_missing",
+            path=str(settings.market_families),
+            fix="make index && make markets",
+        )
 
     if telegram is not None:
         await telegram.start()
@@ -88,7 +96,7 @@ async def run_service(settings: Settings) -> None:
     running = [http]
 
     if telegram is not None and claude is not None:
-        parse = partial(parse_tip, claude=claude, vocabulary=build_vocabulary(settings))
+        parse = partial(parse_tip, claude=claude, vocabulary=vocabulary)
         running.append(
             asyncio.create_task(
                 run_pipeline(telegram.messages(), store, state, Bookmaker(store), parse),

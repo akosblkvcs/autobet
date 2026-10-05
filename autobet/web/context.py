@@ -17,6 +17,7 @@ from autobet.config import Settings
 from autobet.models import BetLeg, SignedIn, utcnow
 from autobet.pipeline import PipelineState
 from autobet.storage import Store
+from autobet.storage.users import DEVELOPMENT_SUBJECT
 from autobet.telegram import Telegram
 from autobet.web.auth import Provider, keep_session, signed_in
 
@@ -72,12 +73,19 @@ async def _signed_in(request: Request, context: Context) -> SignedIn | Response 
     development, which is what keeps it out of production.
     """
     session = await signed_in(request, context.store)
+    bypass = session is not None and session.user.subject == DEVELOPMENT_SUBJECT
 
-    if session is not None:
+    if session is not None and not bypass:
         return session
 
     if context.settings.auth_required:
+        if bypass:
+            log.warning("development_session_refused")
+
         return None
+
+    if session is not None:
+        return session
 
     users = context.store.users
     admin = await users.development_admin(context.settings.dev_admin_email)
