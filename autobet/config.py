@@ -1,5 +1,6 @@
 """Runtime configuration, loaded from the environment."""
 
+import ipaddress
 from pathlib import Path
 from typing import Annotated, Literal
 
@@ -22,6 +23,17 @@ def _split(value: object) -> object:
 Emails = Annotated[tuple[str, ...], NoDecode, BeforeValidator(_split)]
 
 
+def _loopback(host: str) -> bool:
+    """Whether this bind address can be reached from no machine but this one."""
+    if host == "localhost":
+        return True
+
+    try:
+        return ipaddress.ip_address(host).is_loopback
+    except ValueError:
+        return False
+
+
 class Settings(BaseSettings):
     """Everything the app needs to run, sourced from environment variables."""
 
@@ -31,6 +43,25 @@ class Settings(BaseSettings):
         """A typo here would only surface on the first credential read."""
         if value:
             crypto.key(value)
+
+        return value
+
+    @field_validator("auth_required")
+    @classmethod
+    def _closed(cls, value: bool, info: ValidationInfo) -> bool:
+        """A sign-in that production can waive is not a sign-in."""
+        if value:
+            return value
+
+        if info.data.get("environment") != "development":
+            raise ValueError("AUTH_REQUIRED=False is only allowed in development")
+
+        host = str(info.data.get("http_host", ""))
+
+        if not _loopback(host):
+            raise ValueError(
+                f"AUTH_REQUIRED=False needs a loopback HTTP_HOST, not {host!r}"
+            )
 
         return value
 
@@ -51,10 +82,13 @@ class Settings(BaseSettings):
 
     encryption_key: str = ""
 
-    database_url: str = "postgresql://postgres:postgres@localhost:5432/autobet"
+    database_url: str = "postgresql://postgres:postgres@localhost:5433/autobet"
 
     http_host: str = "127.0.0.1"
     http_port: int = 8000
+
+    auth_required: bool = True
+    """Whether a page needs a sign-in. Development only; `_closed` enforces that."""
 
     oidc_issuer: str = ""
     oidc_client_id: str = ""

@@ -18,7 +18,7 @@ def build_app(
     settings: Settings,
     store: Store,
     state: PipelineState,
-    telegram: Telegram,
+    telegram: Telegram | None,
 ) -> FastAPI:
     """Create the control-plane app with every page mounted."""
     app = FastAPI(title="autobet", docs_url=None, redoc_url=None)

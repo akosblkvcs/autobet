@@ -12,7 +12,6 @@ from pydantic import BaseModel, ValidationError
 from autobet.books import Tippmixpro
 from autobet.models import SignedIn
 from autobet.policy import SECRETS
-from autobet.storage import Store
 from autobet.storage.rows import JsonValue
 from autobet.web.context import Context, admin_only, bets_page, templates
 
@@ -37,9 +36,9 @@ def _reason(refused: Exception) -> str:
     return str(refused)
 
 
-async def _actor(request: Request, store: Store, csrf: str) -> SignedIn | Response:
+async def _actor(request: Request, context: Context, csrf: str) -> SignedIn | Response:
     """The admin making this change, or the response to send instead."""
-    guarded = await admin_only(request, store)
+    guarded = await admin_only(request, context)
 
     if isinstance(guarded, Response):
         return guarded
@@ -142,13 +141,13 @@ def router(context: Context) -> APIRouter:
 
     @api.get("")
     async def page(request: Request) -> Response:
-        guarded = await admin_only(request, store)
+        guarded = await admin_only(request, context)
 
         return guarded if isinstance(guarded, Response) else _back("activity")
 
     @api.get("/settings", response_class=HTMLResponse)
     async def settings(request: Request) -> Response:
-        guarded = await admin_only(request, store)
+        guarded = await admin_only(request, context)
 
         return (
             guarded
@@ -158,7 +157,7 @@ def router(context: Context) -> APIRouter:
 
     @api.get("/books", response_class=HTMLResponse)
     async def book_page(request: Request) -> Response:
-        guarded = await admin_only(request, store)
+        guarded = await admin_only(request, context)
 
         return (
             guarded
@@ -168,7 +167,7 @@ def router(context: Context) -> APIRouter:
 
     @api.get("/users", response_class=HTMLResponse)
     async def users_page(request: Request) -> Response:
-        guarded = await admin_only(request, store)
+        guarded = await admin_only(request, context)
 
         return (
             guarded
@@ -178,7 +177,7 @@ def router(context: Context) -> APIRouter:
 
     @api.get("/channels", response_class=HTMLResponse)
     async def channels_page(request: Request) -> Response:
-        guarded = await admin_only(request, store)
+        guarded = await admin_only(request, context)
 
         return (
             guarded
@@ -188,7 +187,7 @@ def router(context: Context) -> APIRouter:
 
     @api.get("/activity", response_class=HTMLResponse)
     async def everyones(request: Request, page: Page = 1) -> Response:
-        guarded = await admin_only(request, store)
+        guarded = await admin_only(request, context)
 
         if isinstance(guarded, Response):
             return guarded
@@ -203,7 +202,7 @@ def router(context: Context) -> APIRouter:
     async def settle(
         request: Request, csrf: Field, tip_id: Number, result: Result, page: PageNumber
     ) -> Response:
-        who = await _actor(request, store, csrf)
+        who = await _actor(request, context, csrf)
 
         if isinstance(who, Response):
             return who
@@ -218,7 +217,7 @@ def router(context: Context) -> APIRouter:
     async def setting(
         request: Request, csrf: Field, key: Field, value: Blank = ""
     ) -> Response:
-        who = await _actor(request, store, csrf)
+        who = await _actor(request, context, csrf)
 
         if isinstance(who, Response):
             return who
@@ -239,7 +238,7 @@ def router(context: Context) -> APIRouter:
     async def book(
         request: Request, csrf: Field, key: Field, value: Blank = ""
     ) -> Response:
-        who = await _actor(request, store, csrf)
+        who = await _actor(request, context, csrf)
 
         if isinstance(who, Response):
             return who
@@ -253,7 +252,7 @@ def router(context: Context) -> APIRouter:
 
     @api.post("/books/enable")
     async def book_enable(request: Request, csrf: Field) -> Response:
-        who = await _actor(request, store, csrf)
+        who = await _actor(request, context, csrf)
 
         if isinstance(who, Response):
             return who
@@ -266,7 +265,7 @@ def router(context: Context) -> APIRouter:
     async def channel(
         request: Request, csrf: Field, chat_id: Field, enabled: Field
     ) -> Response:
-        who = await _actor(request, store, csrf)
+        who = await _actor(request, context, csrf)
 
         if isinstance(who, Response):
             return who
@@ -282,7 +281,7 @@ def router(context: Context) -> APIRouter:
     async def user(
         request: Request, csrf: Field, user_id: Field, active: Field
     ) -> Response:
-        who = await _actor(request, store, csrf)
+        who = await _actor(request, context, csrf)
 
         if isinstance(who, Response):
             return who

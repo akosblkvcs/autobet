@@ -15,6 +15,7 @@ import structlog
 from rapidfuzz import fuzz
 
 from autobet.models import LegOffer, LegResolution, SelectionStatus, TipLeg, utcnow
+from autobet.nations import NATIONS
 
 log = structlog.get_logger(__name__)
 
@@ -248,6 +249,16 @@ class IndexedTournament:
     upcoming: int
 
 
+_NATION_ALIASES: dict[str, tuple[str, ...]] = {
+    hungarian: aliases
+    for hungarian, aliases in (
+        (fold(name), tuple(a for a in _folded(*english) if a != fold(name)))
+        for name, english in NATIONS.items()
+    )
+    if aliases
+}
+
+
 def _aliases(records: Sequence[dict[str, Any]], side: str) -> tuple[str, ...]:
     """Every name the feed gave one side of a fixture, folded and deduplicated."""
     names = {
@@ -255,6 +266,7 @@ def _aliases(records: Sequence[dict[str, Any]], side: str) -> tuple[str, ...]:
         for record in records
         for key in (f"{side}ParticipantName", f"{side}ShortParticipantName")
     }
+    names |= {alias for name in names for alias in _NATION_ALIASES.get(name, ())}
 
     return tuple(sorted(name for name in names if name))
 

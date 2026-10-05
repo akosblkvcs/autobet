@@ -8,6 +8,7 @@ from typing import Any
 from zoneinfo import ZoneInfo
 
 import humanize
+import structlog
 from fastapi import Request
 from fastapi.responses import RedirectResponse, Response
 from fastapi.templating import Jinja2Templates
@@ -16,8 +17,11 @@ from autobet.config import Settings
 from autobet.models import BetLeg, SignedIn, utcnow
 from autobet.pipeline import PipelineState
 from autobet.storage import Store
+from autobet.storage.users import DEVELOPMENT_SUBJECT
 from autobet.telegram import Telegram
-from autobet.web.auth import Provider, signed_in
+from autobet.web.auth import Provider, keep_session, signed_in
+
+log = structlog.get_logger(__name__)
 
 _STYLE_VERSION = hashlib.sha256(
     (Path(__file__).parent / "static" / "style.css").read_bytes()
@@ -59,19 +63,56 @@ async def bets_page(
     return {"rows": rows[:_PAGE], "page": page, "more": len(rows) > _PAGE}
 
 
-async def whoever(request: Request, store: Store) -> SignedIn | Response:
+async def _signed_in(request: Request, context: Context) -> SignedIn | Response | None:
+    """Whoever holds this cookie, or what to send instead -- a sign-in or a bypass.
+
+    With `auth_required` off, a request without a cookie is signed in as the
+    development admin: the row and the session are real, so the cookie it sets
+    carries a stored CSRF token and every guard downstream behaves as it does
+    against the provider. `config._closed` refuses that setting outside
+    development, which is what keeps it out of production.
+    """
+    session = await signed_in(request, context.store)
+    bypass = session is not None and session.user.subject == DEVELOPMENT_SUBJECT
+
+    if session is not None and not bypass:
+        return session
+
+    if context.settings.auth_required:
+        if bypass:
+            log.warning("development_session_refused")
+
+        return None
+
+    if session is not None:
+        return session
+
+    users = context.store.users
+    admin = await users.development_admin()
+    answer = RedirectResponse(request.url.path, status_code=303)
+    keep_session(answer, await users.open_session(admin), context.settings)
+
+    log.info("development_sign_in", email=admin.email)
+
+    return answer
+
+
+async def whoever(request: Request, context: Context) -> SignedIn | Response:
     """Whoever is signed in, or the redirect that asks them to be."""
-    session = await signed_in(request, store)
+    session = await _signed_in(request, context)
 
     return session or RedirectResponse("/auth/login", status_code=303)
 
 
-async def admin_only(request: Request, store: Store) -> SignedIn | Response:
+async def admin_only(request: Request, context: Context) -> SignedIn | Response:
     """The signed-in admin, or the response to send instead of the page."""
-    session = await signed_in(request, store)
+    session = await _signed_in(request, context)
 
     if session is None:
         return RedirectResponse("/auth/login", status_code=303)
+
+    if isinstance(session, Response):
+        return session
 
     if not session.user.is_admin:
         return templates.TemplateResponse(
@@ -91,7 +132,7 @@ class Context:
     settings: Settings
     store: Store
     state: PipelineState
-    telegram: Telegram
+    telegram: Telegram | None
     provider: Provider
 
     async def limits(self, user_id: int) -> dict[str, Any]:
@@ -151,7 +192,7 @@ class Context:
         idle = self.state.seconds_since_last_message()
 
         return {
-            "connected": self.telegram.healthy(),
+            "connected": self.telegram is not None and self.telegram.healthy(),
             "last_message": (
                 "none yet" if idle is None else f"{humanize.naturaldelta(idle)} ago"
             ),
@@ -163,6 +204,8 @@ class Context:
     def service(self) -> dict[str, Any]:
         """The Telegram card: the probe's status, coloured and with the chats."""
         return self.status() | {
-            "connected": _flag(self.telegram.healthy(), "good", "bad"),
-            "channels": list(self.telegram.channels),
+            "connected": _flag(
+                self.telegram is not None and self.telegram.healthy(), "good", "bad"
+            ),
+            "channels": list(self.telegram.channels) if self.telegram else [],
         }

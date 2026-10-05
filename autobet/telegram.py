@@ -151,8 +151,6 @@ class Telegram:
         self._queue.put_nowait(
             IncomingMessage(
                 external_id=message_id(chat_id, int(event.message.id)),
-                # The name resolved at startup, not the per-message one: a bot
-                # chat carries no title and would archive as a bare id.
                 channel=self._named.get(chat_id, str(chat_id)),
                 sent_at=event.message.date,
                 received_at=received_at,

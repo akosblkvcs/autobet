@@ -14,7 +14,7 @@ def router(context: Context) -> APIRouter:
 
     @api.get("/healthz")
     async def healthz() -> JSONResponse:
-        ok = context.telegram.healthy()
+        ok = context.telegram is not None and context.telegram.healthy()
 
         return JSONResponse(context.status(), status_code=200 if ok else 503)
 
