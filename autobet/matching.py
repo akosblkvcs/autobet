@@ -7,7 +7,7 @@ handicap lines, halves and the number of combined legs are the bet itself.
 import re
 import unicodedata
 from collections.abc import Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import UTC, datetime
 from typing import Any
 
@@ -21,9 +21,11 @@ log = structlog.get_logger(__name__)
 
 _MIN_SCORE = 0.85
 _MIN_GAP = 0.05
+_CERTAIN = 0.95
 
 _FIXTURE_SIDES = re.compile(r" - | vs\.? ")
 _DECIMAL_LINE = re.compile(r"(\d+)[.,](\d+)")
+_SPLIT_LINE = re.compile(r"([-+]?\d+(?:\.\d+)?)\s*[,/&]\s*([-+]?\d+(?:\.\d+)?)")
 _SCORE = re.compile(r"(\d+)\s*:\s*(\d+)")
 _SELECTION_PARTS = re.compile(r"\s*(?:/|,|\bvagy\b|\bor\b)\s*")
 _SHORTHAND = re.compile(r"[1x2]+")
@@ -75,14 +77,20 @@ _SIDE_KEYS = {
 }
 
 
+def _quartered(pair: re.Match[str]) -> str:
+    """Two lines half a goal apart are the quarter line between them."""
+    low, high = float(pair.group(1)), float(pair.group(2))
+
+    return f"{(low + high) / 2:g}" if abs(low - high) == 0.5 else pair.group(0)  # noqa: PLR2004
+
+
 def _normalise(name: str) -> str:
     """Reduce a market name to what the slip and the feed agree on."""
     name = _SCORE.sub(lambda m: f"{m.group(1)}-{m.group(2)}", name)
     name = name.replace("–", "-").replace("—", "-")
+    name = _DECIMAL_LINE.sub(lambda m: f"{m.group(1)}.{m.group(2)}", name)
 
-    return " ".join(
-        _DECIMAL_LINE.sub(lambda m: f"{m.group(1)}.{m.group(2)}", name).split()
-    ).casefold()
+    return " ".join(_SPLIT_LINE.sub(_quartered, name).split()).casefold()
 
 
 def _shape(name: str) -> tuple[int, frozenset[float]]:
@@ -125,8 +133,22 @@ def _sided(market: str, leg: TipLeg, event: IndexedEvent) -> list[str]:
     return [market]
 
 
+def _as_tipped(event: IndexedEvent, leg: TipLeg) -> IndexedEvent:
+    """The event with the tip's own name for each side counted among its aliases."""
+    sides = two_sides(leg.event)
+
+    if sides is None:
+        return event
+
+    return replace(
+        event, home=(*event.home, fold(sides[0])), away=(*event.away, fold(sides[1]))
+    )
+
+
 def _asked(leg: TipLeg, event: IndexedEvent) -> list[str]:
     """Every market name this leg could mean, with the slots the model left filled."""
+    event = _as_tipped(event, leg)
+
     return [
         asked
         for market in _lined(leg.market, leg)
@@ -184,7 +206,19 @@ def _marks(name: str) -> frozenset[str]:
     return frozenset(marks | {f"u{age}" for age in _AGE.findall(folded)})
 
 
-def _score(query: str, aliases: Sequence[str]) -> float:
+def _similarity(query: str, alias: str) -> float:
+    """How alike two folded names are as whole names; a shared `FC` alone is not."""
+    return (
+        max(
+            fuzz.ratio(query, alias),
+            0.95 * fuzz.token_sort_ratio(query, alias),
+            0.95 * fuzz.token_set_ratio(query, alias),
+        )
+        / 100
+    )
+
+
+def _score(query: str, aliases: Sequence[str], *, loose: bool = False) -> float:
     """How well one competitor matches any name the feed has for that side."""
     folded = fold(query)
     marks = _marks(query)
@@ -192,10 +226,10 @@ def _score(query: str, aliases: Sequence[str]) -> float:
     return max(
         (
             0.0
-            if marks != _marks(alias)
-            else 0.95
+            if marks != _marks(alias) and (marks or not loose)
+            else _CERTAIN
             if folded == _initials(alias)
-            else fuzz.WRatio(folded, alias) / 100
+            else _similarity(folded, alias)
             for alias in aliases
         ),
         default=0.0,
@@ -298,17 +332,37 @@ def find_event(
         return None
 
     candidates = [event for event in events if event.sport == sport] or events
-    found = _best(
-        [
-            ((_score(sides[0], event.home) + _score(sides[1], event.away)) / 2, event)
-            for event in candidates
-        ]
-    )
+    scored = [
+        (_score(sides[0], event.home), _score(sides[1], event.away), event)
+        for event in candidates
+    ]
+    found = _best([((home + away) / 2, event) for home, away, event in scored])
+
+    if found is None:
+        found = _anchored(sides, scored)
 
     if found is None:
         log.info("event_unclear", fixture=fixture, sport=sport, indexed=len(candidates))
 
     return found
+
+
+def _anchored(
+    sides: tuple[str, str], scored: list[tuple[float, float, IndexedEvent]]
+) -> IndexedEvent | None:
+    """The fixture one side names for certain, its opponent read among that team's."""
+    return _best(
+        [
+            (
+                _score(sides[1], event.away, loose=True)
+                if home >= _CERTAIN
+                else _score(sides[0], event.home, loose=True),
+                event,
+            )
+            for home, away, event in scored
+            if max(home, away) >= _CERTAIN
+        ]
+    )
 
 
 def _parts(selection: str) -> list[str]:
@@ -403,6 +457,7 @@ def _bare(selection: str, event: IndexedEvent) -> str:
 
 def _selection(leg: TipLeg, event: IndexedEvent) -> tuple[str | None, str | None]:
     """What the leg backs, as a header key and as an outcome code."""
+    event = _as_tipped(event, leg)
     folded = fold(leg.selection)
     pieces = [_piece(part, event) for part in _parts(leg.selection)]
     named = [piece for piece in pieces if piece is not None]
