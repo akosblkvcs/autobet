@@ -23,7 +23,7 @@ _MIN_SCORE = 0.85
 _MIN_GAP = 0.05
 _CERTAIN = 0.95
 
-_FIXTURE_SIDES = re.compile(r" - | vs\.? ")
+_FIXTURE_SIDES = re.compile(r" [-–—] | vs\.? ")
 _DECIMAL_LINE = re.compile(r"(\d+)[.,](\d+)")
 _SPLIT_LINE = re.compile(r"([-+]?\d+(?:\.\d+)?)\s*[,/&]\s*([-+]?\d+(?:\.\d+)?)")
 _SCORE = re.compile(r"(\d+)\s*:\s*(\d+)")
@@ -191,7 +191,7 @@ def _initials(folded: str) -> str:
 
 
 def two_sides(name: str) -> tuple[str, str] | None:
-    """Split `A - B` or `A vs. B` into its two competitors, or None."""
+    """Split `A - B`, `A – B` or `A vs. B` into its two competitors, or None."""
     parts = [part.strip() for part in _FIXTURE_SIDES.split(name)]
 
     return (parts[0], parts[1]) if len(parts) == 2 else None  # noqa: PLR2004
