@@ -9,6 +9,7 @@ import unicodedata
 from collections.abc import Sequence
 from dataclasses import dataclass, replace
 from datetime import UTC, datetime
+from itertools import dropwhile
 from typing import Any
 
 import structlog
@@ -25,6 +26,7 @@ _CERTAIN = 0.95
 
 _FIXTURE_SIDES = re.compile(r" [-–—] | vs\.? ")
 _DECIMAL_LINE = re.compile(r"(\d+)[.,](\d+)")
+_HANDICAP_LINE = re.compile(r"hendikep ([-+]?\d+(?:\.\d+)?)\b")
 _SPLIT_LINE = re.compile(r"([-+]?\d+(?:\.\d+)?)\s*[,/&]\s*([-+]?\d+(?:\.\d+)?)")
 _SCORE = re.compile(r"(\d+)\s*:\s*(\d+)")
 _SELECTION_PARTS = re.compile(r"\s*(?:/|,|\bvagy\b|\bor\b)\s*")
@@ -146,6 +148,13 @@ def _as_tipped(event: IndexedEvent, leg: TipLeg) -> IndexedEvent:
     )
 
 
+def _asian(market: str) -> list[str]:
+    """A plain `Hendikep` on a line that leaves no draw is the book's Asian one."""
+    line = _HANDICAP_LINE.match(_normalise(market))
+
+    return [market, f"Ázsiai {market}"] if line and float(line.group(1)) % 1 else [market]
+
+
 def _asked(leg: TipLeg, event: IndexedEvent) -> list[str]:
     """Every market name this leg could mean, with the slots the model left filled."""
     event = _as_tipped(event, leg)
@@ -153,7 +162,8 @@ def _asked(leg: TipLeg, event: IndexedEvent) -> list[str]:
     return [
         asked
         for market in _lined(leg.market, leg)
-        for asked in _sided(market, leg, event)
+        for named in _asian(market)
+        for asked in _sided(named, leg, event)
     ]
 
 
@@ -445,15 +455,18 @@ def _backs(
     return None
 
 
-def _bare(selection: str, event: IndexedEvent) -> str:
-    """The selection with a leading team dropped, which is how the book prints one."""
-    words = selection.replace(":", " ").split()
+def _bare(leg: TipLeg, event: IndexedEvent) -> str:
+    """The selection with a leading team or player dropped, as the book prints one."""
+    words = leg.selection.replace(":", " ").split()
 
     for length in (1, 2, 3):
         if len(words) > length and event.side_of(" ".join(words[:length])):
             return " ".join(words[length:])
 
-    return selection
+    named = set(fold(leg.market.replace(":", " ")).split())
+    rest = list(dropwhile(lambda word: fold(word) in named, words))
+
+    return " ".join(rest) if 0 < len(rest) < len(words) else leg.selection
 
 
 def _selection(leg: TipLeg, event: IndexedEvent) -> tuple[str | None, str | None]:
@@ -467,7 +480,7 @@ def _selection(leg: TipLeg, event: IndexedEvent) -> tuple[str | None, str | None
     key = (
         _SELECTION_KEYS.get(folded)
         or _over_under(folded)
-        or _over_under(fold(_bare(leg.selection, event)))
+        or _over_under(fold(_bare(leg, event)))
         or _SIDE_KEYS.get(whole)
     )
     code = " / ".join(_SIDE_CODES[piece] for piece in named) if whole else None
