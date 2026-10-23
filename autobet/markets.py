@@ -17,20 +17,48 @@ _LINE = re.compile(r"-?\d+[.,]?\d*")
 _PER_SPORT = 8
 
 
-def family(name: str, sides: tuple[str, str] | None) -> str:
-    """One market name reduced to the bet it is, without its line or its teams."""
+def _unlined(word: str) -> str:
+    """A word with its line as `{N}`."""
+    bare = word.rstrip("?!:")
+
+    return "{N}" + word[len(bare) :] if _LINE.fullmatch(bare) else word
+
+
+def family(name: str, sides: tuple[str, str] | None, competitor: str = "") -> str:
+    """One market name reduced to the bet it is, without its line, teams or player."""
     for side in sorted(sides or (), key=len, reverse=True):
         name = name.replace(side, "{csapat}")
 
-    return " ".join("{N}" if _LINE.fullmatch(word) else word for word in name.split())
+    if competitor and name.startswith(competitor):
+        name = "{játékos}" + name[len(competitor) :]
+
+    return " ".join(_unlined(word) for word in name.split())
+
+
+def _competitors(records: list[dict[str, Any]]) -> dict[str, str]:
+    """Who each market is about."""
+    market_of = {
+        record["outcomeId"]: record["marketId"]
+        for record in records
+        if record["_type"] == "MARKET_OUTCOME_RELATION"
+    }
+
+    return {
+        market_of[record["id"]]: str(record["translatedName"]).split(": ", 1)[0]
+        for record in records
+        if record["_type"] == "OUTCOME"
+        and record["id"] in market_of
+        and ": " in str(record.get("translatedName") or "")
+    }
 
 
 def families_of(records: list[dict[str, Any]], event: IndexedEvent) -> set[str]:
     """Every bet type one event's market list holds."""
     sides = two_sides(event.name)
+    competitors = _competitors(records)
 
     return {
-        family(str(record["name"]), sides)
+        family(str(record["name"]), sides, competitors.get(record["id"], ""))
         for record in records
         if record["_type"] == "MARKET"
     }
@@ -100,10 +128,10 @@ def as_prompt(vocabulary: dict[str, list[str]]) -> str:
 
     return f"""
 These are the bet types this bookmaker lists, by sport. Take the one that is
-the same bet and keep its wording, but **replace `{{N}}` with the line and
-`{{csapat}}` with the team as the tipster names it — never answer with a
-placeholder still in it**. Keep the tipster's wording when none of these is the
-bet.
+the same bet and keep its wording, but **replace `{{N}}` with the line,
+`{{csapat}}` with the team and `{{játékos}}` with the player as the tipster
+names them — never answer with a placeholder still in it**. Keep the tipster's
+wording when none of these is the bet.
 
 {listed}
 """

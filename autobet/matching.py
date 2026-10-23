@@ -97,7 +97,8 @@ def _shape(name: str) -> tuple[int, frozenset[float]]:
     """What a market bets on: how many things at once, and at which lines."""
     words = _normalise(name).split()
 
-    lines = frozenset(abs(float(word)) for word in words if _NUMERIC.fullmatch(word))
+    bare = (word.strip("?!:;()") for word in words)
+    lines = frozenset(abs(float(word)) for word in bare if _NUMERIC.fullmatch(word))
 
     return sum(word == "+" for word in words), lines
 
