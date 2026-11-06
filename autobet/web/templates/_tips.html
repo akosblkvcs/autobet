@@ -50,6 +50,13 @@
         <button type="submit" name="result" value="{{ choice }}" class="{{ choice }}{{ " on" if choice == result }}">{{ choice }}</button>
         {% endfor %}
       </form>
+      {%- elif loop.last and settling and not row.verdicts | rejectattr("state", "eq", "refused") | list %}
+      <form class="settle" method="post" action="/admin/delete" onsubmit="return confirm('Delete this tip and everything recorded for it?')">
+        <input type="hidden" name="csrf" value="{{ session.csrf }}">
+        <input type="hidden" name="tip_id" value="{{ row.tip_id }}">
+        <input type="hidden" name="page" value="{{ page }}">
+        <button type="submit">delete</button>
+      </form>
       {%- endif %}
       {%- if verdict.who and row.verdicts | length > 1 %}{{ verdict.who }} &middot; {% endif %}
       {%- if verdict.state == "paper" %}<span class="tag">paper</span>

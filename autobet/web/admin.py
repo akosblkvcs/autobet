@@ -134,6 +134,52 @@ async def _channels(
     )
 
 
+def _activity_routes(api: APIRouter, context: Context) -> None:
+    """Everyone's tips, and the two things an admin does to one."""
+    store = context.store
+
+    @api.get("/activity", response_class=HTMLResponse)
+    async def everyones(request: Request, page: Page = 1) -> Response:
+        guarded = await admin_only(request, context)
+
+        if isinstance(guarded, Response):
+            return guarded
+
+        return templates.TemplateResponse(
+            request,
+            "all_bets.html",
+            {**await bets_page(store, page), "settling": True, "session": guarded},
+        )
+
+    @api.post("/settle")
+    async def settle(
+        request: Request, csrf: Field, tip_id: Number, result: Result, page: PageNumber
+    ) -> Response:
+        who = await _actor(request, context, csrf)
+
+        if isinstance(who, Response):
+            return who
+
+        await store.bets.settle(tip_id, result)
+
+        return RedirectResponse(
+            f"/admin/activity?page={page}#tip-{tip_id}", status_code=303
+        )
+
+    @api.post("/delete")
+    async def delete(
+        request: Request, csrf: Field, tip_id: Number, page: PageNumber
+    ) -> Response:
+        who = await _actor(request, context, csrf)
+
+        if isinstance(who, Response):
+            return who
+
+        await store.bets.delete_refused(tip_id)
+
+        return RedirectResponse(f"/admin/activity?page={page}", status_code=303)
+
+
 def router(context: Context) -> APIRouter:
     """Build the /admin routes."""
     api = APIRouter(prefix="/admin")
@@ -185,33 +231,7 @@ def router(context: Context) -> APIRouter:
             else await _channels(request, context, guarded)
         )
 
-    @api.get("/activity", response_class=HTMLResponse)
-    async def everyones(request: Request, page: Page = 1) -> Response:
-        guarded = await admin_only(request, context)
-
-        if isinstance(guarded, Response):
-            return guarded
-
-        return templates.TemplateResponse(
-            request,
-            "all_bets.html",
-            {**await bets_page(store, page), "settling": True, "session": guarded},
-        )
-
-    @api.post("/settle")
-    async def settle(
-        request: Request, csrf: Field, tip_id: Number, result: Result, page: PageNumber
-    ) -> Response:
-        who = await _actor(request, context, csrf)
-
-        if isinstance(who, Response):
-            return who
-
-        await store.bets.settle(tip_id, result)
-
-        return RedirectResponse(
-            f"/admin/activity?page={page}#tip-{tip_id}", status_code=303
-        )
+    _activity_routes(api, context)
 
     @api.post("/setting")
     async def setting(

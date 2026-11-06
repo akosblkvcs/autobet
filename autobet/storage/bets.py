@@ -119,6 +119,19 @@ class Bets:
 
         return {row["user_id"]: f"{row['state']} from {row['title']}" for row in rows}
 
+    async def delete_refused(self, tip_id: int) -> None:
+        """Wipe a tip and all it wrote, so long as every bet on it was refused."""
+        await self._pool.execute(
+            """
+            DELETE FROM messages
+            WHERE id = (SELECT message_id FROM tips WHERE id = $1)
+              AND NOT EXISTS (
+                  SELECT 1 FROM bets WHERE tip_id = $1 AND state <> 'refused'
+              )
+            """,
+            tip_id,
+        )
+
     async def settle(self, tip_id: int, result: str) -> None:
         """Mark every bet placed on a tip with how its event ended."""
         await self._pool.execute(
