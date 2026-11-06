@@ -9,7 +9,7 @@ import uvicorn
 
 from autobet.bookmaker import Bookmaker
 from autobet.config import Settings
-from autobet.parser import build_claude, build_vocabulary, parse_tip
+from autobet.parser import build_claude, build_vocabulary, parse_tip, read_leg
 from autobet.pipeline import PipelineState, run_pipeline
 from autobet.policy import Integrations
 from autobet.storage import Store
@@ -97,9 +97,10 @@ async def run_service(settings: Settings) -> None:
 
     if telegram is not None and claude is not None:
         parse = partial(parse_tip, claude=claude, vocabulary=vocabulary)
+        bookmaker = Bookmaker(store, partial(read_leg, claude=claude))
         running.append(
             asyncio.create_task(
-                run_pipeline(telegram.messages(), store, state, Bookmaker(store), parse),
+                run_pipeline(telegram.messages(), store, state, bookmaker, parse),
                 name="pipeline",
             )
         )

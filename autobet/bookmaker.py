@@ -9,7 +9,7 @@ import structlog
 
 from autobet.books import TIPPMIXPRO, Tippmixpro
 from autobet.connection import Connection, connected
-from autobet.index import Index
+from autobet.index import Index, ReadLeg
 from autobet.models import (
     BetResult,
     LegOffer,
@@ -40,9 +40,10 @@ def _priced(tip: Tip, offers: Sequence[LegOffer]) -> tuple[float, float | None]:
 class Bookmaker:
     """The bookmaker representation."""
 
-    def __init__(self, store: Store) -> None:
-        """Hold the store and build the index the tips are resolved against."""
+    def __init__(self, store: Store, read: ReadLeg) -> None:
+        """Hold the store, the model's reading and the index tips resolve against."""
         self._store = store
+        self._read = read
         self._index = Index(store)
 
     async def place(self, tip: Tip, policy: Policy) -> Placement:
@@ -50,7 +51,7 @@ class Bookmaker:
         book = await self._store.books.config()
 
         async with connected(book) as connection:
-            resolutions = await self._index.resolve(connection, tip)
+            resolutions = await self._index.resolve(connection, tip, self._read)
 
         offers = [resolution.offer for resolution in resolutions]
 
