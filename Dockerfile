@@ -1,5 +1,5 @@
 # Base stage
-FROM python:3.15-slim AS base
+FROM python:3.14-slim AS base
 
 WORKDIR /app
 
@@ -20,7 +20,7 @@ RUN --mount=type=cache,target=/root/.cache/uv \
 COPY autobet ./autobet
 
 # Production stage
-FROM python:3.15-slim AS production
+FROM python:3.14-slim AS production
 
 WORKDIR /app
 
@@ -42,6 +42,8 @@ COPY --from=builder --chown=appuser:appgroup /app/autobet /app/autobet
 RUN mkdir -p /data && chown appuser:appgroup /data
 
 USER appuser
+
+RUN python -c "import autobet.cli"
 
 EXPOSE 8000
 
