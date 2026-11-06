@@ -367,9 +367,9 @@ def _fits(
 def unread_fixtures(events: Sequence[IndexedEvent], leg: TipLeg) -> list[IndexedEvent]:
     """What the model may read a fixture from: a certain side's, or else the sport's."""
     candidates = _of_sport(events, leg.sport)
-    sides = two_sides(leg.event) or ("", "")
+    sides = two_sides(leg.event)
 
-    if _fits(sides, candidates):
+    if sides is None or _fits(sides, candidates):
         return []
 
     anchored = [
@@ -388,7 +388,7 @@ def same_teams(leg: TipLeg, event: IndexedEvent) -> bool:
     sides = two_sides(leg.event)
 
     if sides is None:
-        return True
+        return False
 
     home, away = sides
     straight = _score(home, event.home, loose=True) + _score(away, event.away, loose=True)

@@ -17,6 +17,7 @@ from autobet.models import IncomingMessage, Tip, TipLeg, combined, utcnow
 log = structlog.get_logger(__name__)
 
 _VISION_MODEL = "claude-opus-5-5"
+_READING_SECONDS = 30.0
 
 _SLIP_PROMPT = """This image was posted by a sports betting tipster. Decide
 what it is, then read it.
@@ -185,7 +186,8 @@ async def read_leg(
     """Which of the book's entries a leg means, by position, or None if none surely."""
     started = utcnow()
     listed = "\n".join(f"{number}. {option}" for number, option in enumerate(options, 1))
-    response = await claude.messages.parse(
+    bounded = claude.with_options(timeout=_READING_SECONDS, max_retries=0)
+    response = await bounded.messages.parse(
         model=_VISION_MODEL,
         max_tokens=16000,
         thinking={"type": "adaptive"},
