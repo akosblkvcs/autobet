@@ -9,7 +9,7 @@ import structlog
 
 from autobet.books import TIPPMIXPRO, Tippmixpro
 from autobet.connection import Connection, connected
-from autobet.index import Index
+from autobet.index import Index, ReadLeg
 from autobet.models import (
     BetResult,
     LegOffer,
@@ -40,9 +40,10 @@ def _priced(tip: Tip, offers: Sequence[LegOffer]) -> tuple[float, float | None]:
 class Bookmaker:
     """The bookmaker representation."""
 
-    def __init__(self, store: Store) -> None:
-        """Hold the store and build the index the tips are resolved against."""
+    def __init__(self, store: Store, read: ReadLeg) -> None:
+        """Hold the store, the model's reading and the index tips resolve against."""
         self._store = store
+        self._read = read
         self._index = Index(store)
 
     async def place(self, tip: Tip, policy: Policy) -> Placement:
@@ -50,7 +51,7 @@ class Bookmaker:
         book = await self._store.books.config()
 
         async with connected(book) as connection:
-            resolutions = await self._index.resolve(connection, tip)
+            resolutions = await self._index.resolve(connection, tip, self._read)
 
         offers = [resolution.offer for resolution in resolutions]
 
@@ -88,9 +89,14 @@ class Bookmaker:
 
         held = await self._store.users.policies([account.user_id for account in accounts])
         terms = [held[account.user_id].over(policy) for account in accounts]
+        staked = (
+            {}
+            if shared.refusal is not None
+            else await self._store.bets.holding([o for o in offers if o is not None])
+        )
         bets = await asyncio.gather(
             *(
-                self._bet(book, tip, shared, own, account)
+                self._bet(book, shared, own, account, staked.get(account.user_id))
                 for own, account in zip(terms, accounts, strict=True)
             ),
             return_exceptions=True,
@@ -122,10 +128,10 @@ class Bookmaker:
     async def _bet(
         self,
         book: Tippmixpro,
-        tip: Tip,
         shared: BetResult,
         terms: Terms,
         account: Account,
+        already: str | None,
     ) -> BetResult:
         """One account's verdict: the tip's own faults, then this person's terms."""
         result = replace(shared, user_id=account.user_id, stake=terms.stake)
@@ -138,19 +144,22 @@ class Bookmaker:
                 result, refusal=Refusal(RefusalCode.USER_PAUSED, "paused by the user")
             )
 
+        if already is not None:
+            return replace(result, refusal=Refusal(RefusalCode.DUPLICATE, already))
+
         placeable = [offer for offer in shared.offers if offer is not None]
-        beyond = self._beyond_limits(tip, placeable, terms)
+        beyond = self._beyond_limits(shared.tip, placeable, terms)
 
         if beyond is not None:
             return replace(result, refusal=beyond)
 
-        live, _ = _priced(tip, placeable)
+        live, _ = _priced(shared.tip, placeable)
         unsent = f"{terms.stake} at {live:.3f}"
 
         if terms.paper_mode:
             return replace(result, refusal=Refusal(RefusalCode.PAPER_MODE, unsent))
 
-        return await self._staked(book, tip, terms, shared, account)
+        return await self._staked(book, shared.tip, terms, shared, account)
 
     def _report(self, tip: Tip, offers: list[LegOffer | None]) -> None:
         """Say what each leg resolved to, once, however many accounts follow."""

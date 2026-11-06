@@ -1,11 +1,8 @@
-"""Turning a tipster's wording into the bookmaker's own event, market and outcome.
-
-Fuzz the wording, never the structure: team names and market phrasing vary, while
-handicap lines, halves and the number of combined legs are the bet itself.
-"""
+"""Turning a tipster's wording into the bookmaker's own event, market and outcome."""
 
 import re
 import unicodedata
+from collections import Counter
 from collections.abc import Sequence
 from dataclasses import dataclass, replace
 from datetime import UTC, datetime
@@ -67,6 +64,7 @@ _MARKS = {
 _DRAW_WORDS = _folded("Döntetlen", "Draw", "X")
 _OVER_WORDS = _folded("Több", "Over")
 _UNDER_WORDS = _folded("Kevesebb", "Under")
+_DIRECTIONS = frozenset({"over", "under", "yes", "no"})
 _SIDE_WORDS = {"1": "home", "x": "draw", "2": "away"}
 _SIDE_CODES = {"home": "#HOME", "away": "#AWAY", "draw": "#D"}
 _SIDE_KEYS = {
@@ -189,13 +187,6 @@ def _top[Candidate](scored: list[tuple[float, Candidate]]) -> list[Candidate]:
     return [candidate for score, candidate in ranked if best - score < _MIN_GAP]
 
 
-def _best[Candidate](scored: list[tuple[float, Candidate]]) -> Candidate | None:
-    """The one clear winner among scored candidates, or None if there is not one."""
-    top = _top(scored)
-
-    return top[0] if len(top) == 1 else None
-
-
 def _initials(folded: str) -> str:
     """Abbreviation hit helper, so `ANM` reaches `Atl. Nacional Medellin`."""
     return "".join(word[0] for word in folded.split() if word)
@@ -219,6 +210,8 @@ def _marks(name: str) -> frozenset[str]:
 
 def _similarity(query: str, alias: str) -> float:
     """How alike two folded names are as whole names; a shared `FC` alone is not."""
+    query, alias = query.replace("-", " "), alias.replace("-", " ")
+
     return (
         max(
             fuzz.ratio(query, alias),
@@ -342,27 +335,76 @@ def find_event(
     if sides is None:
         return None
 
-    candidates = [event for event in events if event.sport == sport] or events
+    candidates = _of_sport(events, sport)
+    fits = _fits(sides, candidates)
+
+    if len(fits) == 1:
+        return fits[0]
+
+    log.info("event_unclear", fixture=fixture, sport=sport, indexed=len(candidates))
+
+    return None
+
+
+def _of_sport(events: Sequence[IndexedEvent], sport: str) -> Sequence[IndexedEvent]:
+    """The fixtures of the tip's sport, or all of them for a sport the book lacks."""
+    return [event for event in events if event.sport == sport] or events
+
+
+def _fits(
+    sides: tuple[str, str], candidates: Sequence[IndexedEvent]
+) -> list[IndexedEvent]:
+    """Every fixture the names fit: one is a match, several a tie, none a miss."""
     scored = [
         (_score(sides[0], event.home), _score(sides[1], event.away), event)
         for event in candidates
     ]
-    found = _best([((home + away) / 2, event) for home, away, event in scored])
+    average = _top([((home + away) / 2, event) for home, away, event in scored])
 
-    if found is None:
-        found = _anchored(sides, scored)
+    return average if len(average) == 1 else _anchored(sides, scored) or average
 
-    if found is None:
-        log.info("event_unclear", fixture=fixture, sport=sport, indexed=len(candidates))
 
-    return found
+def unread_fixtures(events: Sequence[IndexedEvent], leg: TipLeg) -> list[IndexedEvent]:
+    """What the model may read a fixture from: a certain side's, or else the sport's."""
+    candidates = _of_sport(events, leg.sport)
+    sides = two_sides(leg.event)
+
+    if sides is None or _fits(sides, candidates):
+        return []
+
+    anchored = [
+        event
+        for event in candidates
+        if max(_score(sides[0], event.home), _score(sides[1], event.away)) >= _CERTAIN
+    ]
+    upcoming = [event for event in anchored or candidates if not event.started]
+    printed = Counter(event.name for event in upcoming)
+
+    return [event for event in upcoming if printed[event.name] == 1]
+
+
+def same_teams(leg: TipLeg, event: IndexedEvent) -> bool:
+    """Whether a fixture can be the tip's: the same way round, any marker it names."""
+    sides = two_sides(leg.event)
+
+    if sides is None:
+        return False
+
+    home, away = sides
+    straight = _score(home, event.home, loose=True) + _score(away, event.away, loose=True)
+    swapped = _score(home, event.away, loose=True) + _score(away, event.home, loose=True)
+
+    return straight >= swapped and all(
+        not _marks(side) or any(_marks(side) == _marks(alias) for alias in aliases)
+        for side, aliases in zip(sides, (event.home, event.away), strict=True)
+    )
 
 
 def _anchored(
     sides: tuple[str, str], scored: list[tuple[float, float, IndexedEvent]]
-) -> IndexedEvent | None:
-    """The fixture one side names for certain, its opponent read among that team's."""
-    return _best(
+) -> list[IndexedEvent]:
+    """The fixtures one side names for certain, the opponent read among that team's."""
+    return _top(
         [
             (
                 _score(sides[1], event.away, loose=True)
@@ -422,6 +464,13 @@ def _lines_named(leg: TipLeg) -> frozenset[float]:
     )
 
 
+def _names_side_line(leg: TipLeg, outcome: str) -> bool:
+    """Whether the line an outcome prints for its side is one the leg names."""
+    sided = _SIDED_LINE.search(outcome)
+
+    return sided is None or _line(sided.group(1)) in _lines_named(leg)
+
+
 def _backs(
     outcome: dict[str, Any],
     leg: TipLeg,
@@ -431,9 +480,7 @@ def _backs(
     """How specifically an outcome is the bet a leg names; lower is better."""
     key, code = wanted
 
-    sided = _SIDED_LINE.search(str(outcome.get("translatedName") or ""))
-
-    if sided is not None and _line(sided.group(1)) not in _lines_named(leg):
+    if not _names_side_line(leg, str(outcome.get("translatedName") or "")):
         return None
 
     shown = fold(_normalise(str(outcome.get("translatedName") or "")))
@@ -488,16 +535,40 @@ def _selection(leg: TipLeg, event: IndexedEvent) -> tuple[str | None, str | None
     return key, code
 
 
-def pick_offer(
-    leg: TipLeg, event: IndexedEvent, records: Sequence[dict[str, Any]]
-) -> LegResolution:
-    """The one offer a leg names among an event's markets, or how far it got."""
+def _grouped(records: Sequence[dict[str, Any]]) -> dict[str, list[dict[str, Any]]]:
+    """One fixture's records by what they are."""
     grouped: dict[str, list[dict[str, Any]]] = {}
     for record in records:
         grouped.setdefault(record["_type"], []).append(record)
 
+    return grouped
+
+
+def _priced_outcomes(
+    grouped: dict[str, list[dict[str, Any]]],
+) -> dict[str, list[dict[str, Any]]]:
+    """The outcomes of each market that carry a price."""
+    market_of = {
+        relation["outcomeId"]: relation["marketId"]
+        for relation in grouped.get("MARKET_OUTCOME_RELATION", [])
+    }
+    prices = {offer["outcomeId"] for offer in grouped.get("BETTING_OFFER", [])}
+    priced: dict[str, list[dict[str, Any]]] = {}
+
+    for outcome in grouped.get("OUTCOME", []):
+        if outcome["id"] in prices and outcome["id"] in market_of:
+            priced.setdefault(market_of[outcome["id"]], []).append(outcome)
+
+    return priced
+
+
+def _named_markets(
+    leg: TipLeg, event: IndexedEvent, grouped: dict[str, list[dict[str, Any]]]
+) -> dict[str, dict[str, Any]]:
+    """The markets a leg's wording fits, by id."""
     asked = _asked(leg, event)
-    named = {
+
+    return {
         market["id"]: market
         for market in _top(
             [
@@ -506,46 +577,61 @@ def pick_offer(
             ]
         )
     }
+
+
+def _offer(
+    leg: TipLeg,
+    event: IndexedEvent,
+    market: dict[str, Any],
+    outcome: dict[str, Any],
+    grouped: dict[str, list[dict[str, Any]]],
+) -> LegResolution:
+    """A leg resolved to one priced outcome of one market."""
+    prices = {one["outcomeId"]: one for one in grouped["BETTING_OFFER"]}
+    offer = prices[outcome["id"]]
+
+    return LegResolution(
+        SelectionStatus.RESOLVED,
+        LegOffer(
+            leg=leg,
+            event_id=event.id,
+            event_name=event.name,
+            market_id=str(market["id"]),
+            outcome_id=str(outcome["id"]),
+            betting_type_id=str(market.get("bettingTypeId")),
+            offer_id=str(offer["id"]),
+            odds=float(offer["odds"]),
+            starts_at=event.starts_at,
+        ),
+    )
+
+
+def pick_offer(
+    leg: TipLeg, event: IndexedEvent, records: Sequence[dict[str, Any]]
+) -> LegResolution:
+    """The one offer a leg names among an event's markets, or how far it got."""
+    grouped = _grouped(records)
+    named = _named_markets(leg, event, grouped)
+
     if not named:
         log.info("market_unmatched", fixture=event.name, market=leg.market)
 
         return LegResolution(SelectionStatus.NO_MARKET)
 
-    market_of = {
-        relation["outcomeId"]: relation["marketId"]
-        for relation in grouped.get("MARKET_OUTCOME_RELATION", [])
-    }
-    prices = {offer["outcomeId"]: offer for offer in grouped.get("BETTING_OFFER", [])}
+    priced = _priced_outcomes(grouped)
     wanted = _selection(leg, event)
     sides = {event.home_id: "#HOME", event.away_id: "#AWAY"}
     matched = [
-        (tier, named[market_of[outcome["id"]]], outcome)
-        for outcome in grouped.get("OUTCOME", [])
-        if market_of.get(outcome["id"]) in named
-        and outcome["id"] in prices
-        and (tier := _backs(outcome, leg, wanted, sides)) is not None
+        (tier, market, outcome)
+        for market_id, market in named.items()
+        for outcome in priced.get(market_id, [])
+        if (tier := _backs(outcome, leg, wanted, sides)) is not None
     ]
     closest = min((tier for tier, _, _ in matched), default=0)
     found = [(market, outcome) for tier, market, outcome in matched if tier == closest]
 
     if len(found) == 1:
-        market, outcome = found[0]
-        offer = prices[outcome["id"]]
-
-        return LegResolution(
-            SelectionStatus.RESOLVED,
-            LegOffer(
-                leg=leg,
-                event_id=event.id,
-                event_name=event.name,
-                market_id=str(market["id"]),
-                outcome_id=str(outcome["id"]),
-                betting_type_id=str(market.get("bettingTypeId")),
-                offer_id=str(offer["id"]),
-                odds=float(offer["odds"]),
-                starts_at=event.starts_at,
-            ),
-        )
+        return _offer(leg, event, found[0][0], found[0][1], grouped)
 
     log.info(
         "outcome_unmatched",
@@ -559,3 +645,71 @@ def pick_offer(
         return LegResolution(SelectionStatus.AMBIGUOUS)
 
     return LegResolution(SelectionStatus.NO_OUTCOME)
+
+
+def market_options(
+    leg: TipLeg, event: IndexedEvent, records: Sequence[dict[str, Any]]
+) -> tuple[list[dict[str, Any]], bool]:
+    """What the model may read a market from, and whether the wording fits them."""
+    grouped = _grouped(records)
+    priced = _priced_outcomes(grouped)
+    named = _named_markets(leg, event, grouped)
+    fitting = [market for market_id, market in named.items() if market_id in priced]
+
+    if fitting:
+        return fitting, True
+
+    return [m for m in grouped.get("MARKET", []) if m["id"] in priced], False
+
+
+def outcome_options(
+    market: dict[str, Any], records: Sequence[dict[str, Any]]
+) -> list[dict[str, Any]]:
+    """What the model may read an outcome from: the market's priced ones."""
+    return _priced_outcomes(_grouped(records))[market["id"]]
+
+
+def outcome_label(outcome: dict[str, Any]) -> str:
+    """What the book prints for an outcome."""
+    return str(outcome.get("translatedName") or outcome.get("code") or "")
+
+
+def _printed_lines(name: str) -> frozenset[float]:
+    """The lines a name prints, which a period like `1. félidő` is not."""
+    bare = (word.strip("?!:;()") for word in _normalise(name).split())
+
+    return frozenset(abs(_line(word)) for word in bare if _LINE_TOKEN.fullmatch(word))
+
+
+def _same_bet(
+    leg: TipLeg, event: IndexedEvent, market: dict[str, Any], outcome: dict[str, Any]
+) -> bool:
+    """Whether a reading keeps the tip's lines and does not turn its direction round."""
+    label = outcome_label(outcome)
+    shorthand = _SHORTHAND.fullmatch(fold(leg.selection))
+    named = _printed_lines(f"{leg.market} {'' if shorthand else leg.selection}")
+    listed = _printed_lines(str(market["name"]))
+    wanted = _selection(leg, event)[0]
+    printed = outcome.get("headerNameKey")
+
+    return (
+        listed <= named <= listed | _printed_lines(label)
+        and _names_side_line(leg, label)
+        and not (wanted in _DIRECTIONS and printed in _DIRECTIONS and wanted != printed)
+    )
+
+
+def read_offer(
+    leg: TipLeg,
+    event: IndexedEvent,
+    market: dict[str, Any],
+    outcome: dict[str, Any],
+    records: Sequence[dict[str, Any]],
+) -> LegResolution | None:
+    """The offer the model read a leg as, unless that is not the bet the tip names."""
+    if not _same_bet(leg, event, market, outcome):
+        log.info("reading_refused", market=market["name"], outcome=outcome_label(outcome))
+
+        return None
+
+    return _offer(leg, event, market, outcome, _grouped(records))

@@ -50,24 +50,22 @@ class Reports:
         self._pool = pool
 
     async def totals(self, user_id: int) -> dict[str, int]:
-        """The tips everyone saw, and what became of this user's bets on them."""
+        """What became of this user's bets, all counted over the same rows."""
         row = await self._pool.fetchrow(
             """
-            SELECT (SELECT count(*) FROM tips) AS tips,
-                   (SELECT count(*) FROM bets
-                      WHERE user_id = $1 AND state = 'placed')  AS placed,
-                   (SELECT count(*) FROM bets
-                      WHERE user_id = $1 AND state = 'paper')   AS paper,
-                   (SELECT count(*) FROM bets
-                      WHERE user_id = $1 AND state = 'refused') AS refused,
-                   (SELECT count(*) FROM bets
-                      WHERE user_id = $1 AND state = 'error')   AS failed,
-                   (SELECT count(*) FROM bets
-                      WHERE user_id = $1 AND settlement = 'won')  AS won,
-                   (SELECT count(*) FROM bets
-                      WHERE user_id = $1 AND settlement = 'lost') AS lost,
-                   (SELECT count(*) FROM bets
-                      WHERE user_id = $1 AND settlement = 'void') AS void
+            SELECT count(*)                                  AS tips,
+                   count(*) FILTER (WHERE state = 'placed')  AS placed,
+                   count(*) FILTER (WHERE state = 'paper')   AS paper,
+                   count(*) FILTER (WHERE state = 'refused') AS refused,
+                   count(*) FILTER (WHERE state = 'error')   AS failed,
+                   count(*) FILTER (WHERE state = 'placed' AND settlement = 'won')
+                       AS won,
+                   count(*) FILTER (WHERE state = 'placed' AND settlement = 'lost')
+                       AS lost,
+                   count(*) FILTER (WHERE state = 'placed' AND settlement = 'void')
+                       AS void
+            FROM bets
+            WHERE user_id = $1
             """,
             user_id,
         )

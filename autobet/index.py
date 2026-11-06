@@ -1,10 +1,6 @@
-"""The bookmaker's board, walked into the index a tip is looked up in.
+"""The bookmaker's board, walked into the index a tip is looked up in."""
 
-The walk is a scheduled task (`python -m autobet index`), not a loop inside the
-service: it writes to Postgres, so the index outlives a deploy and the app only
-ever reads it.
-"""
-
+from collections.abc import Awaitable, Callable, Sequence
 from typing import Any
 
 import structlog
@@ -15,7 +11,13 @@ from autobet.matching import (
     IndexedTournament,
     find_event,
     indexed_event,
+    market_options,
+    outcome_label,
+    outcome_options,
     pick_offer,
+    read_offer,
+    same_teams,
+    unread_fixtures,
 )
 from autobet.models import LegResolution, SelectionStatus, Tip, TipLeg
 from autobet.storage import Store
@@ -25,6 +27,9 @@ log = structlog.get_logger(__name__)
 _DISCIPLINES_TOPIC = "disciplines/NOT_LIVE/NOT_VIRTUAL/NOT_SIMULATED"
 _TREE_TOPIC = "tournament-with-children"
 _LANGUAGES = ("hu", "en")
+
+ReadLeg = Callable[[TipLeg, str, Sequence[str]], Awaitable[int | None]]
+"""Which of the book's entries a leg means: the leg, what is asked, the entries."""
 
 
 def _upcoming(tournament: dict[str, Any]) -> int:
@@ -79,10 +84,14 @@ class Index:
 
         return len(events)
 
-    async def resolve(self, connection: Connection, tip: Tip) -> list[LegResolution]:
+    async def resolve(
+        self, connection: Connection, tip: Tip, read: ReadLeg
+    ) -> list[LegResolution]:
         """Map every leg of a tip to the offer that would be staked."""
         events = await self._store.events.all()
-        found = [await self._resolve_leg(connection, events, leg) for leg in tip.legs]
+        found = [
+            await self._resolve_leg(connection, events, leg, read) for leg in tip.legs
+        ]
         missing = [
             leg
             for leg, resolution in zip(tip.legs, found, strict=True)
@@ -97,22 +106,57 @@ class Index:
 
             events = rewalked
             found = [
-                resolution
-                if resolution.offer is not None
-                else await self._resolve_leg(connection, events, leg)
+                await self._resolve_leg(connection, events, leg, read)
+                if resolution.status is SelectionStatus.NO_EVENT
+                else resolution
                 for leg, resolution in zip(tip.legs, found, strict=True)
             ]
 
-        return found
+        return [
+            await self._read_event(connection, events, leg, read)
+            if resolution.status is SelectionStatus.NO_EVENT
+            else resolution
+            for leg, resolution in zip(tip.legs, found, strict=True)
+        ]
 
     async def _resolve_leg(
-        self, connection: Connection, events: list[IndexedEvent], leg: TipLeg
+        self,
+        connection: Connection,
+        events: list[IndexedEvent],
+        leg: TipLeg,
+        read: ReadLeg,
     ) -> LegResolution:
         """Find the one betting offer a leg names, or say how far it got."""
         event = find_event(events, leg.event, leg.sport)
         if event is None:
             return LegResolution(SelectionStatus.NO_EVENT)
 
+        return await self._on_fixture(connection, event, leg, read)
+
+    async def _read_event(
+        self,
+        connection: Connection,
+        events: list[IndexedEvent],
+        leg: TipLeg,
+        read: ReadLeg,
+    ) -> LegResolution:
+        """A fixture the names could not find, read off the book's own list."""
+        fixtures = unread_fixtures(events, leg)
+
+        if not fixtures:
+            return LegResolution(SelectionStatus.NO_EVENT)
+
+        choice = await read(leg, "fixture", [one.name for one in fixtures])
+
+        if choice is None or not same_teams(leg, fixtures[choice]):
+            return LegResolution(SelectionStatus.NO_EVENT)
+
+        return await self._on_fixture(connection, fixtures[choice], leg, read)
+
+    async def _on_fixture(
+        self, connection: Connection, event: IndexedEvent, leg: TipLeg, read: ReadLeg
+    ) -> LegResolution:
+        """The offer a leg names on its fixture, by the names and then by the model."""
         records = await connection.match_odds(event.id)
 
         if not records:
@@ -120,7 +164,45 @@ class Index:
 
             return LegResolution(SelectionStatus.NO_ODDS)
 
-        return pick_offer(leg, event, records)
+        picked = pick_offer(leg, event, records)
+
+        if picked.offer is not None:
+            return picked
+
+        return await self._read_offer(leg, event, records, read) or picked
+
+    async def _read_offer(
+        self,
+        leg: TipLeg,
+        event: IndexedEvent,
+        records: list[dict[str, Any]],
+        read: ReadLeg,
+    ) -> LegResolution | None:
+        """A market and outcome the names could not settle, read off the book's list."""
+        markets, fitted = market_options(leg, event, records)
+        choice = (
+            0
+            if fitted and len(markets) == 1
+            else await read(
+                leg, f"market of {event.name}", [str(one["name"]) for one in markets]
+            )
+        )
+
+        if choice is None:
+            return None
+
+        market = markets[choice]
+        outcomes = outcome_options(market, records)
+        picked = await read(
+            leg,
+            f"outcome of {market['name']} on {event.name}",
+            [outcome_label(one) for one in outcomes],
+        )
+
+        if picked is None:
+            return None
+
+        return read_offer(leg, event, market, outcomes[picked], records)
 
     async def _rewalk(
         self, connection: Connection, events: list[IndexedEvent], sport: str

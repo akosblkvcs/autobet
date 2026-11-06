@@ -1,6 +1,7 @@
 """Turn a message into a tip by reading its betslip screenshot."""
 
 import base64
+from collections.abc import Sequence
 from pathlib import Path
 from typing import Literal
 
@@ -16,6 +17,7 @@ from autobet.models import IncomingMessage, Tip, TipLeg, combined, utcnow
 log = structlog.get_logger(__name__)
 
 _VISION_MODEL = "claude-opus-5-5"
+_READING_SECONDS = 30.0
 
 _SLIP_PROMPT = """This image was posted by a sports betting tipster. Decide
 what it is, then read it.
@@ -71,6 +73,30 @@ Only "to_place" is a bet we can make; return one leg per selection.
 """
 
 
+_READING_PROMPT = """A sports betting tipster's bet, in the tipster's words:
+
+- sport: {sport}
+- event: {event}
+- market: {market}
+- selection: {selection}
+
+Comparing spellings could not place this bet. Below is the bookmaker's own list
+for the {asked}: answer with the number of the entry that means the same thing,
+or null when none does.
+
+Spelling, language, abbreviation and how much of a name is written may all
+differ. These may not:
+- the competitors, with the first one named still the home side;
+- which team of a club it is: women, reserves and age groups are other teams;
+- the period and the line. A bet that names no period is on the whole match.
+
+A wrong number loses money and null only skips the bet, so answer only what you
+are sure of.
+
+{options}
+"""
+
+
 class _Leg(BaseModel):
     """One selection, as Claude reads it off the image."""
 
@@ -87,6 +113,12 @@ class _Slip(BaseModel):
 
     kind: Literal["to_place", "settled", "other"]
     legs: list[_Leg]
+
+
+class _Reading(BaseModel):
+    """Which numbered entry the model read a leg as, if any."""
+
+    number: int | None
 
 
 def build_claude(api_key: str) -> AsyncAnthropic:
@@ -146,6 +178,50 @@ def _content(message: IncomingMessage) -> list[ContentBlockParam] | None:
         ]
 
     return None
+
+
+async def read_leg(
+    leg: TipLeg, asked: str, options: Sequence[str], *, claude: AsyncAnthropic
+) -> int | None:
+    """Which of the book's entries a leg means, by position, or None if none surely."""
+    started = utcnow()
+    listed = "\n".join(f"{number}. {option}" for number, option in enumerate(options, 1))
+    bounded = claude.with_options(timeout=_READING_SECONDS, max_retries=0)
+    response = await bounded.messages.parse(
+        model=_VISION_MODEL,
+        max_tokens=16000,
+        thinking={"type": "adaptive"},
+        output_config={"effort": "low"},
+        messages=[
+            {
+                "role": "user",
+                "content": _READING_PROMPT.format(
+                    sport=leg.sport,
+                    event=leg.event,
+                    market=leg.market,
+                    selection=leg.selection,
+                    asked=asked,
+                    options=listed,
+                ),
+            }
+        ],
+        output_format=_Reading,
+    )
+    reading = response.parsed_output
+    number = 0 if reading is None else reading.number or 0
+    chosen = number - 1 if 1 <= number <= len(options) else None
+
+    log.info(
+        "leg_read",
+        fixture=leg.event,
+        asked=asked,
+        options=len(options),
+        read=None if chosen is None else options[chosen],
+        ms=int((utcnow() - started).total_seconds() * 1000),
+        **_spend(response.usage),
+    )
+
+    return chosen
 
 
 async def parse_tip(
