@@ -179,10 +179,10 @@ class Index:
         read: ReadLeg,
     ) -> LegResolution | None:
         """A market and outcome the names could not settle, read off the book's list."""
-        markets = market_options(leg, event, records)
+        markets, fitted = market_options(leg, event, records)
         choice = (
             0
-            if len(markets) == 1
+            if fitted and len(markets) == 1
             else await read(
                 leg, f"market of {event.name}", [str(one["name"]) for one in markets]
             )

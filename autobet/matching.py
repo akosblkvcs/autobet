@@ -64,6 +64,7 @@ _MARKS = {
 _DRAW_WORDS = _folded("Döntetlen", "Draw", "X")
 _OVER_WORDS = _folded("Több", "Over")
 _UNDER_WORDS = _folded("Kevesebb", "Under")
+_DIRECTIONS = frozenset({"over", "under", "yes", "no"})
 _SIDE_WORDS = {"1": "home", "x": "draw", "2": "away"}
 _SIDE_CODES = {"home": "#HOME", "away": "#AWAY", "draw": "#D"}
 _SIDE_KEYS = {
@@ -383,10 +384,17 @@ def unread_fixtures(events: Sequence[IndexedEvent], leg: TipLeg) -> list[Indexed
 
 
 def same_teams(leg: TipLeg, event: IndexedEvent) -> bool:
-    """Whether a fixture can be the tip's: a marker the tip names must be on it."""
+    """Whether a fixture can be the tip's: the same way round, any marker it names."""
     sides = two_sides(leg.event)
 
-    return sides is None or all(
+    if sides is None:
+        return True
+
+    home, away = sides
+    straight = _score(home, event.home, loose=True) + _score(away, event.away, loose=True)
+    swapped = _score(home, event.away, loose=True) + _score(away, event.home, loose=True)
+
+    return straight >= swapped and all(
         not _marks(side) or any(_marks(side) == _marks(alias) for alias in aliases)
         for side, aliases in zip(sides, (event.home, event.away), strict=True)
     )
@@ -641,14 +649,17 @@ def pick_offer(
 
 def market_options(
     leg: TipLeg, event: IndexedEvent, records: Sequence[dict[str, Any]]
-) -> list[dict[str, Any]]:
-    """What the model may read a market from: those the wording fits, else them all."""
+) -> tuple[list[dict[str, Any]], bool]:
+    """What the model may read a market from, and whether the wording fits them."""
     grouped = _grouped(records)
     priced = _priced_outcomes(grouped)
     named = _named_markets(leg, event, grouped)
     fitting = [market for market_id, market in named.items() if market_id in priced]
 
-    return fitting or [m for m in grouped.get("MARKET", []) if m["id"] in priced]
+    if fitting:
+        return fitting, True
+
+    return [m for m in grouped.get("MARKET", []) if m["id"] in priced], False
 
 
 def outcome_options(
@@ -670,6 +681,24 @@ def _printed_lines(name: str) -> frozenset[float]:
     return frozenset(abs(_line(word)) for word in bare if _LINE_TOKEN.fullmatch(word))
 
 
+def _same_bet(
+    leg: TipLeg, event: IndexedEvent, market: dict[str, Any], outcome: dict[str, Any]
+) -> bool:
+    """Whether a reading keeps the tip's lines and does not turn its direction round."""
+    label = outcome_label(outcome)
+    shorthand = _SHORTHAND.fullmatch(fold(leg.selection))
+    named = _printed_lines(f"{leg.market} {'' if shorthand else leg.selection}")
+    listed = _printed_lines(str(market["name"]))
+    wanted = _selection(leg, event)[0]
+    printed = outcome.get("headerNameKey")
+
+    return (
+        listed <= named <= listed | _printed_lines(label)
+        and _names_side_line(leg, label)
+        and not (wanted in _DIRECTIONS and printed in _DIRECTIONS and wanted != printed)
+    )
+
+
 def read_offer(
     leg: TipLeg,
     event: IndexedEvent,
@@ -677,16 +706,9 @@ def read_offer(
     outcome: dict[str, Any],
     records: Sequence[dict[str, Any]],
 ) -> LegResolution | None:
-    """The offer the model read a leg as, unless that changes a line the tip names."""
-    label = outcome_label(outcome)
-    shorthand = _SHORTHAND.fullmatch(fold(leg.selection))
-    named = _printed_lines(f"{leg.market} {'' if shorthand else leg.selection}")
-    listed = _printed_lines(str(market["name"]))
-
-    if not listed <= named <= listed | _printed_lines(label) or not _names_side_line(
-        leg, label
-    ):
-        log.info("reading_refused", market=market["name"], outcome=label, named=named)
+    """The offer the model read a leg as, unless that is not the bet the tip names."""
+    if not _same_bet(leg, event, market, outcome):
+        log.info("reading_refused", market=market["name"], outcome=outcome_label(outcome))
 
         return None
 
