@@ -1,5 +1,6 @@
 """Tips, what their legs resolved to, and what each user did about them."""
 
+from collections.abc import Sequence
 from datetime import datetime
 
 from asyncpg import Pool, Record
@@ -9,6 +10,7 @@ from autobet.models import (
     BetLeg,
     BetResult,
     BetState,
+    LegOffer,
     LegResolution,
     MessageWithTip,
     Placement,
@@ -92,6 +94,30 @@ class Bets:
             )
             for row in rows
         ]
+
+    async def holding(self, offers: Sequence[LegOffer]) -> dict[int, str]:
+        """Who has already bet any of these event and market pairs, and from where."""
+        rows = await self._pool.fetch(
+            """
+            SELECT DISTINCT ON (b.user_id) b.user_id, b.state, c.title
+            FROM bets b
+              JOIN bet_legs bl ON bl.bet_id = b.id
+              JOIN selections s ON s.id = bl.selection_id
+              JOIN tips t ON t.id = b.tip_id
+              JOIN messages m ON m.id = t.message_id
+              JOIN channels c ON c.id = m.channel_id
+            WHERE b.user_id IS NOT NULL
+              AND b.state IN ('placed', 'paper', 'error')
+              AND (s.event_id, s.market_id) IN (
+                  SELECT * FROM unnest($1::text[], $2::text[])
+              )
+            ORDER BY b.user_id, b.id
+            """,
+            [offer.event_id for offer in offers],
+            [offer.market_id for offer in offers],
+        )
+
+        return {row["user_id"]: f"{row['state']} from {row['title']}" for row in rows}
 
     async def settle(self, tip_id: int, result: str) -> None:
         """Mark every bet placed on a tip with how its event ended."""

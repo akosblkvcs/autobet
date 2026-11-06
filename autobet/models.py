@@ -15,6 +15,7 @@ class RefusalCode(StrEnum):
     EVENT_STARTED = "event_started"
     ODDS_DROP = "odds_drop"
     ODDS_RISE = "odds_rise"
+    DUPLICATE = "duplicate"
     UNPRICED = "unpriced"
     NO_ACCOUNT = "no_account"
     INSUFFICIENT_BALANCE = "insufficient_balance"
